@@ -1,0 +1,32 @@
+:root{--fundo:#f3f0fa;--cartao:#fff;--texto:#1d1b26;--suave:#6b667a;--cor:#6d28d9;--cor2:#a855f7;--borda:#ddd6ee;--ok:#15803d;--falta:#b45309}
+@media (prefers-color-scheme:dark){:root{--fundo:#0f0d16;--cartao:#1a1724;--texto:#f1eef9;--suave:#a39bb8;--cor:#a78bfa;--cor2:#c084fc;--borda:#342e48;--ok:#4ade80;--falta:#fbbf24}}
+*{box-sizing:border-box}
+body{margin:0;padding:24px 16px;background:radial-gradient(1200px 500px at 50% -100px,rgba(168,85,247,.25),transparent),var(--fundo);color:var(--texto);font:18px/1.5 "Segoe UI",Arial,sans-serif}
+.pagina{max-width:960px;margin:0 auto}
+h1{font-size:30px;margin:0 0 6px}
+p{margin:0 0 10px}
+.suave{color:var(--suave)}
+.cartao{background:var(--cartao);border:1px solid var(--borda);border-radius:16px;padding:18px;margin:16px 0;box-shadow:0 8px 30px rgba(109,40,217,.08)}
+button{font:inherit;cursor:pointer;border:0;border-radius:12px;padding:12px 20px;color:#fff;background:linear-gradient(135deg,var(--cor),var(--cor2))}
+button:hover{filter:brightness(1.1)}
+button.leve{background:transparent;color:var(--texto);border:1px solid var(--borda)}
+button.leve.ativa{border-color:var(--cor);color:var(--cor)}
+.abas{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+.abas button{background:var(--cartao);color:var(--texto);border:1px solid var(--borda)}
+.abas button.ativa{background:linear-gradient(135deg,var(--cor),var(--cor2));color:#fff;border-color:transparent}
+.numeros{display:flex;gap:12px;flex-wrap:wrap;margin-top:12px}
+.numero{flex:1 1 150px;border:1px solid var(--borda);border-radius:12px;padding:10px;text-align:center;font-size:15px}
+.numero b{display:block;font-size:26px;color:var(--cor)}
+.barra{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.grupo{border:1px solid var(--borda);border-radius:12px;padding:12px;margin-bottom:10px;background:var(--cartao)}
+.grupo h3{margin:0 0 6px;font-size:18px}
+.item{font-size:15px;color:var(--suave);word-break:break-all;padding:4px 0;border-top:1px dashed var(--borda)}
+.forte{color:var(--falta);font-weight:600}
+.linha{display:flex;gap:10px;align-items:center;padding:8px 4px;border-bottom:1px solid var(--borda);font-size:16px}
+.pos{width:34px;color:var(--suave);text-align:right}
+.nome{flex:1;min-width:0}
+.nome small{display:block;color:var(--suave);font-size:14px}
+.selo{font-size:13px;padding:2px 10px;border-radius:99px;border:1px solid currentColor;white-space:nowrap}
+.tenho{color:var(--ok)}.falta{color:var(--falta)}
+.rolagem{max-height:70vh;overflow-y:auto}
+h2{font-size:20px;margin:18px 0 6px}

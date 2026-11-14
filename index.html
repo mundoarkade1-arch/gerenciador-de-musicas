@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'; img-src data:;">
+<title>Gerenciador de Músicas</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="pagina">
+  <header>
+    <h1>🎵 Gerenciador de Músicas</h1>
+    <p class="suave">Ele só LÊ os nomes das suas músicas. Não apaga, não muda e não envia nada. Tudo fica no seu computador.</p>
+  </header>
+
+  <section class="cartao">
+    <button id="botaoPasta">📁 Escolher pasta das músicas</button>
+    <p id="mensagem" class="suave"></p>
+    <div id="numeros" class="numeros"></div>
+  </section>
+
+  <nav class="abas">
+    <button data-aba="repetidas" class="ativa">Repetidas</button>
+    <button data-aba="top">Top 200</button>
+    <button data-aba="novidades">Novidades</button>
+  </nav>
+
+  <main id="conteudo"></main>
+</div>
+<script src="data/charts.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
