@@ -1,0 +1,27 @@
+name: Atualizar listas top 200
+
+on:
+  schedule:
+    - cron: "0 9 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  atualizar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Buscar as listas
+        run: node scripts/atualizar.mjs
+      - name: Salvar se mudou
+        run: |
+          git config user.name "atualizador"
+          git config user.email "atualizador@users.noreply.github.com"
+          git add data/charts.js
+          git diff --staged --quiet || git commit -m "Atualiza listas top 200"
+          git push
