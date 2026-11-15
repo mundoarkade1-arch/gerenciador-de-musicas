@@ -6,7 +6,7 @@
   var PASTA_RAIZ = 'Músicas do Site';
   var CH = window.CHARTS || { atualizado: null, listas: {}, historico: [] };
   var $ = function (id) { return document.getElementById(id); };
-  var estado = { arquivos: [], b: [], aba: 'repetidas', lista: null, soFalta: false, tinhaSalvo: false, n: 50, cache: {}, aviso: '' };
+  var estado = { arquivos: [], b: [], aba: 'repetidas', lista: null, soFalta: false, soFaltaYt: false, tinhaSalvo: false, n: 50, cache: {}, aviso: '' };
   var D = { token: null, itens: null, ocupado: false };
   // D.msg agora manda o texto para o sistema de avisos (ui.js) e devolve o último texto.
   Object.defineProperty(D, 'msg', { get: function () { return UI.ultima || ''; }, set: function (v) { UI.msg(v); } });
@@ -212,19 +212,115 @@
     acoes.appendChild(filtro);
     if (faltam.length) acoes.appendChild(copiar);
     c.appendChild(acoes);
+    var ytl = YT.lista(estado.lista);
+    cartaoYoutube(c, estado.lista, L, ytl);
 
     var caixa = el('div', null, 'cartao rolagem');
     marcadas.forEach(function (m, i) {
       if (estado.soFalta && m.tem !== false) return;
+      if (estado.soFaltaYt && ytl.playlistId && ytl.feitas[m.f.id]) return;
       var l = el('div', null, 'linha');
       l.appendChild(el('span', String(i + 1), 'pos'));
       var nome = el('div', m.f.t, 'nome');
       nome.appendChild(el('small', m.f.a));
       l.appendChild(nome);
       if (m.tem !== null) l.appendChild(el('span', m.tem ? 'já tenho' : 'falta', 'selo ' + (m.tem ? 'tenho' : 'falta')));
+      if (ytl.playlistId) {
+        var noYt = !!ytl.feitas[m.f.id];
+        l.appendChild(el('span', noYt ? 'no YouTube' : (ytl.sem[m.f.id] ? 'sem resultado' : 'falta no YouTube'), 'selo ' + (noYt ? 'tenho' : 'falta')));
+      }
       caixa.appendChild(l);
     });
     c.appendChild(caixa);
+  }
+
+  // ---------- YouTube: criar a playlist aos poucos (grátis, respeitando a cota do dia) ----------
+
+  function cartaoYoutube(c, id, L, ytl) {
+    var q = YT.quantas(id, L.faixas);
+    var feitas = L.faixas.filter(function (f) { return ytl.feitas[f.id]; }).length;
+    var sem = L.faixas.filter(function (f) { return ytl.sem[f.id]; }).length;
+    var cx = el('div', null, 'cartao');
+    cx.appendChild(el('h2', '▶ Playlist no YouTube'));
+    var txt = ytl.playlistId
+      ? 'Já estão na playlist: ' + feitas + ' de ' + L.faixas.length + '.' + (sem ? ' Sem resultado na busca: ' + sem + '.' : '') + ' Faltam: ' + (L.faixas.length - feitas - sem) + '.'
+      : 'A playlist ainda não foi criada. Ela é criada como privada, só você vê.';
+    cx.appendChild(el('p', txt, 'suave'));
+    cx.appendChild(el('p', 'Cota grátis de hoje: usei ' + YT.usado() + ' de ' + YT.COTA + '. Hoje ainda cabem cerca de ' + q.lote.length + ' músicas. O que não couber continua amanhã, de onde parou.', 'suave'));
+    var bar = el('div', null, 'barra');
+    if (!YT.token) {
+      var bE = el('button', 'Entrar com YouTube');
+      bE.onclick = ytEntrar;
+      bar.appendChild(bE);
+    } else {
+      var bV = el('button', q.lote.length ? '▶ Enviar as próximas ' + q.lote.length + ' músicas' : (q.pendentes ? 'A cota de hoje acabou. Volte amanhã' : '✔ Playlist completa'));
+      bV.disabled = YT.ocupado || !q.lote.length;
+      bV.onclick = function () { ytEnviar(id, L); };
+      bar.appendChild(bV);
+    }
+    if (ytl.playlistId) {
+      var bA = el('button', 'Abrir no YouTube', 'leve');
+      bA.onclick = function () { window.open('https://www.youtube.com/playlist?list=' + encodeURIComponent(ytl.playlistId), '_blank', 'noopener'); };
+      bar.appendChild(bA);
+      var bF = el('button', estado.soFaltaYt ? 'Mostrar todas' : 'Mostrar só o que falta no YouTube', 'leve');
+      bF.onclick = function () { estado.soFaltaYt = !estado.soFaltaYt; desenhar(); };
+      bar.appendChild(bF);
+    }
+    if (sem) {
+      var bS = el('button', 'Tentar de novo as ' + sem + ' sem resultado', 'leve');
+      bS.onclick = function () { YT.liberarSem(id); desenhar(); };
+      bar.appendChild(bS);
+    }
+    cx.appendChild(bar);
+    c.appendChild(cx);
+  }
+
+  async function ytEntrar() {
+    try {
+      await carregarGoogle();
+      var cliente = window.google.accounts.oauth2.initTokenClient({
+        client_id: CLIENT_ID,
+        scope: YT.ESCOPO,
+        callback: function (r) {
+          if (r && r.access_token) {
+            YT.token = r.access_token;
+            D.msg = 'Conectado ao YouTube. Agora clique em "Enviar as próximas músicas".';
+          } else {
+            D.msg = 'Não consegui entrar no YouTube' + (r && r.error ? ' (' + r.error + ')' : '') + '. Tente de novo.';
+          }
+          desenhar();
+        },
+        error_callback: function (e) {
+          D.msg = 'Não consegui entrar no YouTube' + (e && e.type ? ' (' + e.type + ')' : '') + '. Tente de novo.';
+          desenhar();
+        }
+      });
+      cliente.requestAccessToken({ prompt: '' });
+    } catch (e) {
+      D.msg = e.message;
+    }
+  }
+
+  async function ytEnviar(id, L) {
+    if (YT.ocupado) return;
+    UI.quieto = false;
+    var p = YT.enviar(id, L.nome, L.faixas, function (i, total, f) {
+      D.msg = 'Enviando para o YouTube ' + i + ' de ' + total + ': ' + f.a + ' - ' + f.t + ' (não feche esta página)';
+    });
+    desenhar();
+    try {
+      var r = await p;
+      var ytl = YT.lista(id);
+      var feitas = L.faixas.filter(function (f) { return ytl.feitas[f.id]; }).length;
+      var txt = 'Pronto! Coloquei ' + r.colocadas + ' música(s) na playlist.';
+      if (r.semNovas) txt += ' ' + r.semNovas + ' não achei no YouTube.';
+      if (r.parou === 'completa') txt += ' A playlist está completa.';
+      else txt += ' Já estão ' + feitas + ' de ' + L.faixas.length + '.' + (r.parou === 'cota' ? ' A cota grátis de hoje acabou: volte amanhã (ela renova de madrugada, entre 4h e 5h em Brasília) e clique de novo para continuar.' : ' Clique de novo para continuar.');
+      D.msg = txt;
+    } catch (e) {
+      D.msg = e.message;
+    }
+    desenhar();
   }
 
   function listaFaixas(c, titulo, faixas, mostrarTenho) {
