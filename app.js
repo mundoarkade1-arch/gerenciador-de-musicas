@@ -186,8 +186,23 @@
       return;
     }
     if (!estado.lista || !CH.listas[estado.lista]) estado.lista = ids[0];
+    // Uma fileira de botões por gênero; embaixo ficam as listas daquele gênero.
+    var grupoDe = function (id) { return CH.listas[id].grupo || 'Outras'; };
+    var grupos = [];
+    ids.forEach(function (id) { if (grupos.indexOf(grupoDe(id)) < 0) grupos.push(grupoDe(id)); });
+    var gAtual = grupoDe(estado.lista);
+    if (grupos.length > 1) {
+      var barraG = el('div', null, 'barra');
+      grupos.forEach(function (g) {
+        var bg = el('button', g, 'leve' + (g === gAtual ? ' ativa' : ''));
+        bg.onclick = function () { estado.lista = ids.filter(function (id) { return grupoDe(id) === g; })[0]; desenhar(); };
+        barraG.appendChild(bg);
+      });
+      c.appendChild(barraG);
+    }
     var barra = el('div', null, 'barra');
     ids.forEach(function (id) {
+      if (grupoDe(id) !== gAtual) return;
       var b = el('button', CH.listas[id].nome, 'leve' + (id === estado.lista ? ' ativa' : ''));
       b.onclick = function () { estado.lista = id; desenhar(); };
       barra.appendChild(b);
