@@ -531,7 +531,8 @@
         var i = f.name.lastIndexOf('.');
         if (i < 0 || EXT.indexOf(f.name.slice(i + 1).toLowerCase()) < 0) return;
         var s = f.name.slice(0, i);
-        D.itens.push({ id: f.id, fn: f.name, p: caminho((f.parents || [])[0]), k: limpar(s, false), b: limpar(s, true), t: Number(f.size || 0) });
+        var cam = caminho((f.parents || [])[0]);
+        D.itens.push({ id: f.id, fn: f.name, p: cam, k: limpar(s, false), b: limpar(s, true), t: Number(f.size || 0), site: cam === PASTA_RAIZ || cam.indexOf(PASTA_RAIZ + '/') === 0 });
       });
       D.msg = 'Pronto! Achei ' + D.itens.length + ' músicas no seu Drive.';
     } catch (e) {
@@ -543,7 +544,10 @@
 
   function playlistsComId() {
     var mapa = {};
-    D.itens.forEach(function (d) { mapa[d.fn.toLowerCase()] = d.id; });
+    D.itens.forEach(function (d) {
+      var ch = d.fn.toLowerCase();
+      if (!mapa[ch] || d.site) mapa[ch] = d.id;
+    });
     return todasPlaylists().map(function (p) {
       p.faixas = p.faixas.map(function (f) {
         var id = mapa[f.fn.toLowerCase()];
@@ -589,7 +593,7 @@
   function faltamSubir() {
     if (!D.itens) return [];
     var noDrive = {};
-    D.itens.forEach(function (d) { noDrive[d.k] = true; });
+    D.itens.forEach(function (d) { if (d.site) noDrive[d.k] = true; });
     return estado.arquivos.filter(function (m) { return m.h && !noDrive[m.k]; });
   }
 
@@ -647,7 +651,7 @@
         try {
           var pid = await pastaDoCaminho(pastaDoArquivo(m.c), cache);
           var r = await subirArquivo(m, pid);
-          D.itens.push({ id: r.id, fn: nomeDoArquivo(m.c), p: PASTA_RAIZ + '/' + pastaDoArquivo(m.c), k: m.k, b: m.b, t: m.t });
+          D.itens.push({ id: r.id, fn: nomeDoArquivo(m.c), p: PASTA_RAIZ + '/' + pastaDoArquivo(m.c), k: m.k, b: m.b, t: m.t, site: true });
           certas++;
         } catch (e1) {
           if (!D.token) throw e1;
@@ -680,10 +684,96 @@
     if (linhas.length > 200) c.appendChild(el('p', 'Mostrando só as 200 primeiras.', 'suave'));
   }
 
+  // ---------- Google Drive: repetidas (só manda para a LIXEIRA, nunca apaga de vez) ----------
+
+  // Em cada grupo de repetidas DA PASTA DO SITE, escolhe qual fica:
+  // a maior; se o tamanho for quase igual (até 2% de diferença), a de nome mais curto.
+  // Só manda para a lixeira cópias com tamanho parecido (até 10% menores). O resto não é mexido.
+  function planoLixeira() {
+    var gs = {};
+    (D.itens || []).forEach(function (d) {
+      if (d.site && d.k) (gs[d.k] = gs[d.k] || []).push(d);
+    });
+    var out = [];
+    Object.keys(gs).forEach(function (k) {
+      var arr = gs[k];
+      if (arr.length < 2) return;
+      var maior = Math.max.apply(null, arr.map(function (d) { return d.t; }));
+      if (!maior) return;
+      var perto = arr.filter(function (d) { return d.t >= maior * 0.98; });
+      perto.sort(function (a, b) {
+        return (a.fn.length - b.fn.length) || ((a.p + '/' + a.fn) < (b.p + '/' + b.fn) ? -1 : 1);
+      });
+      var manter = perto[0];
+      var lixo = arr.filter(function (d) { return d !== manter && d.t >= maior * 0.9; });
+      if (lixo.length) out.push({ manter: manter, lixo: lixo });
+    });
+    return out;
+  }
+
+  async function mandarParaLixeira() {
+    if (D.ocupado) return;
+    var plano = planoLixeira();
+    var total = plano.reduce(function (s, g) { return s + g.lixo.length; }, 0);
+    if (!total) { aviso('Não tem repetidas na pasta "' + PASTA_RAIZ + '" para limpar.'); return; }
+    if (!window.confirm('Vou mandar ' + total + ' cópia(s) repetida(s) para a LIXEIRA do Drive. Em cada grupo, fica a cópia maior. Nada é apagado de vez: você pode recuperar pela lixeira do Drive por 30 dias. Continuar?')) return;
+    D.ocupado = true;
+    var certas = 0;
+    var falhas = 0;
+    var idsOk = {};
+    try {
+      for (var g = 0; g < plano.length; g++) {
+        for (var x = 0; x < plano[g].lixo.length; x++) {
+          var d = plano[g].lixo[x];
+          D.msg = 'Mandando para a lixeira ' + (certas + falhas + 1) + ' de ' + total + '... (não feche esta página)';
+          desenhar();
+          try {
+            await api(API + '/' + encodeURIComponent(d.id) + '?fields=id', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ trashed: true }) });
+            idsOk[d.id] = true;
+            certas++;
+          } catch (e1) {
+            if (!D.token) throw e1;
+            falhas++;
+          }
+        }
+      }
+    } catch (e) {
+      D.itens = D.itens.filter(function (d) { return !idsOk[d.id]; });
+      D.ocupado = false;
+      D.msg = 'Parou depois de mandar ' + certas + ' cópia(s) para a lixeira. ' + e.message;
+      desenhar();
+      return;
+    }
+    D.itens = D.itens.filter(function (d) { return !idsOk[d.id]; });
+    D.ocupado = false;
+    var texto = 'Mandei ' + certas + ' cópia(s) para a lixeira do Drive.' + (falhas ? ' ' + falhas + ' não deu certo. Clique no botão de novo para tentar essas.' : '');
+    if (certas > 0 && estado.arquivos.length) {
+      await enviarParaDrive();
+      D.msg = texto + ' ' + D.msg;
+    } else if (certas > 0) {
+      D.msg = texto + ' Para atualizar o arquivo de playlists, escolha a pasta das músicas (botão lá em cima) e clique em "Colocar playlists no Drive".';
+    } else {
+      D.msg = texto;
+    }
+    desenhar();
+  }
+
+  function linhaDrive(d) {
+    var l = el('div', null, 'item');
+    l.appendChild(el('span', (d.site ? '[pasta do site] ' : '[fora do site] ') + (d.p ? d.p + '/' : '') + d.fn + ' (' + (d.t / 1048576).toFixed(1) + ' MB)  '));
+    var a = el('a', 'abrir no Drive');
+    a.href = 'https://drive.google.com/file/d/' + encodeURIComponent(d.id) + '/view';
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.style.cssText = 'color:var(--cor);font-weight:600;';
+    l.appendChild(a);
+    return l;
+  }
+
   function cartaoNuvem(c) {
     var n = el('div', null, 'cartao');
     n.appendChild(el('h2', '☁ Ligar ao Google Drive'));
-    n.appendChild(el('p', 'O site lê os nomes dos seus áudios no Drive. Ele só envia arquivos quando você clica em um botão de subir. Nunca apaga nada.', 'suave'));
+    n.appendChild(el('p', 'O site lê os nomes dos seus áudios no Drive. Só envia arquivos quando você clica em um botão de subir. Nunca apaga de vez: as repetidas da pasta "' + PASTA_RAIZ + '" só vão para a lixeira do Drive, depois que você confirma.', 'suave'));
     var barra = el('div', null, 'barra');
     var bEntrar = el('button', D.token ? 'Entrar de novo' : 'Entrar com Google', D.token ? 'leve' : '');
     bEntrar.onclick = entrar;
@@ -697,31 +787,61 @@
     if (D.msg) n.appendChild(el('p', D.msg));
 
     if (D.itens) {
-      var noDrive = {};
+      var noSite = {};
       var gd = {};
+      var nSite = 0;
       D.itens.forEach(function (d) {
-        noDrive[d.k] = true;
+        if (d.site) { noSite[d.k] = true; nSite++; }
         if (d.k) (gd[d.k] = gd[d.k] || []).push(d);
       });
-      var rep = Object.keys(gd).filter(function (k) { return gd[k].length > 1; }).sort(function (a, b) { return gd[b].length - gd[a].length; });
+      n.appendChild(el('p', 'Na pasta "' + PASTA_RAIZ + '" do Drive: ' + nSite + ' músicas. No resto do Drive: ' + (D.itens.length - nSite) + '.', 'suave'));
 
       if (estado.arquivos.length) {
-        var faltam = estado.arquivos.filter(function (m) { return !noDrive[m.k]; });
-        n.appendChild(el('p', 'Do seu PC: ' + (estado.arquivos.length - faltam.length) + ' já estão no Drive e ' + faltam.length + ' ainda faltam subir.'));
+        var faltam = estado.arquivos.filter(function (m) { return !noSite[m.k]; });
+        n.appendChild(el('p', 'Do seu PC: ' + (estado.arquivos.length - faltam.length) + ' já estão na pasta "' + PASTA_RAIZ + '" e ' + faltam.length + ' ainda faltam subir para ela.'));
         if (faltam.length && D.token) {
           var bSubir = el('button', '⬆ Subir as ' + faltam.length + ' que faltam para o Drive');
           bSubir.onclick = subirFaltantes;
           bSubir.disabled = D.ocupado;
           n.appendChild(bSubir);
         }
-        listaSimples(n, 'Faltam subir para o Drive', faltam.map(function (m) { return m.c; }));
+        listaSimples(n, 'Faltam subir para a pasta "' + PASTA_RAIZ + '"', faltam.map(function (m) { return m.c; }));
       } else {
         n.appendChild(el('p', 'Para comparar com o PC, escolha a pasta das músicas (botão lá em cima).', 'suave'));
       }
 
-      listaSimples(n, 'Repetidas dentro do Drive', rep.map(function (k) {
-        return gd[k].map(function (d) { return d.p + '/' + d.fn + ' (' + (d.t / 1048576).toFixed(1) + ' MB)'; }).join('  |  ');
+      // Repetidas DENTRO da pasta do site: o site limpa (lixeira).
+      var plano = planoLixeira();
+      var totalLixo = plano.reduce(function (s, g) { return s + g.lixo.length; }, 0);
+      listaSimples(n, 'Repetidas dentro da pasta "' + PASTA_RAIZ + '"', plano.map(function (g) {
+        return 'Fica: ' + g.manter.p + '/' + g.manter.fn + ' (' + (g.manter.t / 1048576).toFixed(1) + ' MB)  →  Lixeira: ' + g.lixo.map(function (d) { return d.p + '/' + d.fn + ' (' + (d.t / 1048576).toFixed(1) + ' MB)'; }).join('  |  ');
       }));
+      if (totalLixo && D.token) {
+        var bLixo = el('button', '🗑 Mandar ' + totalLixo + ' cópia(s) repetida(s) para a lixeira do Drive');
+        bLixo.style.marginTop = '8px';
+        bLixo.onclick = mandarParaLixeira;
+        bLixo.disabled = D.ocupado;
+        n.appendChild(bLixo);
+      }
+
+      // Repetidas que envolvem arquivos FORA da pasta do site: o site não pode mexer, você apaga pelo Drive.
+      var fora = Object.keys(gd).filter(function (k) {
+        return gd[k].length > 1 && gd[k].some(function (d) { return !d.site; });
+      }).sort(function (a, b) { return gd[b].length - gd[a].length; });
+      n.appendChild(el('h3', 'Repetidas com arquivos fora da pasta "' + PASTA_RAIZ + '" (' + fora.length + ')'));
+      if (!fora.length) {
+        n.appendChild(el('p', 'Nenhuma. 🎉', 'suave'));
+      } else {
+        n.appendChild(el('p', 'O site não consegue mexer nos arquivos "fora do site". Clique em "abrir no Drive" e apague por lá.', 'suave'));
+        var caixaF = el('div', null, 'rolagem');
+        fora.slice(0, 100).forEach(function (k) {
+          var gr = el('div', null, 'grupo');
+          gd[k].forEach(function (d) { gr.appendChild(linhaDrive(d)); });
+          caixaF.appendChild(gr);
+        });
+        n.appendChild(caixaF);
+        if (fora.length > 100) n.appendChild(el('p', 'Mostrando só os 100 primeiros grupos.', 'suave'));
+      }
 
       if (estado.arquivos.length) {
         var bEnv = el('button', '⬆ Colocar playlists no Drive (com o id de cada música)');
