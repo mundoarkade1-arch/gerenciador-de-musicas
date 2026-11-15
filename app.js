@@ -7,7 +7,9 @@
   var CH = window.CHARTS || { atualizado: null, listas: {}, historico: [] };
   var $ = function (id) { return document.getElementById(id); };
   var estado = { arquivos: [], b: [], aba: 'repetidas', lista: null, soFalta: false, tinhaSalvo: false, n: 50, cache: {}, aviso: '' };
-  var D = { token: null, itens: null, msg: '', ocupado: false };
+  var D = { token: null, itens: null, ocupado: false };
+  // D.msg agora manda o texto para o sistema de avisos (ui.js) e devolve o último texto.
+  Object.defineProperty(D, 'msg', { get: function () { return UI.ultima || ''; }, set: function (v) { UI.msg(v); } });
 
   function el(tag, txt, cls) {
     var e = document.createElement(tag);
@@ -70,7 +72,7 @@
       if (x && x.b && x.b.length) {
         estado.b = x.b;
         estado.tinhaSalvo = true;
-        $('mensagem').textContent = 'Última leitura salva: ' + new Date(x.d).toLocaleDateString('pt-BR') + '. Para ver as repetidas, escolha a pasta de novo.';
+        UI.msg('Última leitura salva: ' + new Date(x.d).toLocaleDateString('pt-BR') + '. Para ver as repetidas, escolha a pasta de novo.');
       }
     } catch (e) { /* sem problema */ }
   }
@@ -122,7 +124,9 @@
 
   function numero(valor, rotulo) {
     var d = el('div', null, 'numero');
-    d.appendChild(el('b', String(valor)));
+    var b = el('b', String(valor));
+    if (typeof valor === 'number') b.setAttribute('data-alvo', String(valor));
+    d.appendChild(b);
     d.appendChild(document.createTextNode(rotulo));
     return d;
   }
@@ -135,6 +139,7 @@
     n.appendChild(numero(g.lista.length, 'grupos repetidos'));
     n.appendChild(numero(g.sobra, 'cópias a mais'));
     n.appendChild(numero(CH.atualizado ? new Date(CH.atualizado).toLocaleDateString('pt-BR') : '—', 'listas atualizadas'));
+    UI.contar(n);
   }
 
   function grupos() {
@@ -368,13 +373,7 @@
   }
 
   // Aviso que aparece embaixo da tela, sempre visível, e some sozinho.
-  function aviso(msg) {
-    var t = document.createElement('div');
-    t.textContent = msg;
-    t.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);max-width:90vw;padding:14px 20px;border-radius:14px;background:#6d28d9;color:#fff;font-size:18px;box-shadow:0 8px 30px rgba(0,0,0,.35);z-index:99;';
-    document.body.appendChild(t);
-    setTimeout(function () { t.remove(); }, 7000);
-  }
+  function aviso(msg) { UI.msg(msg); }
 
   function baixar(arquivo, playlists, manterVazias) {
     if (!manterVazias) playlists = playlists.filter(function (p) { return p.faixas.length > 0; });
@@ -729,7 +728,7 @@
     var plano = planoLixeira();
     var total = plano.reduce(function (s, g) { return s + g.lixo.length; }, 0);
     if (!total) { aviso('Não tem repetidas na pasta "' + PASTA_RAIZ + '" para limpar.'); return true; }
-    if (!window.confirm('Vou mandar ' + total + ' cópia(s) repetida(s) para a LIXEIRA do Drive. Em cada grupo, fica a cópia maior. Nada é apagado de vez: você pode recuperar pela lixeira do Drive por 30 dias. Continuar?')) return 'cancelado';
+    if (!(await UI.confirmar({ total: total, itens: plano.map(function (g) { return { fica: g.manter.p + '/' + g.manter.fn, vai: g.lixo.map(function (d) { return d.p + '/' + d.fn; }) }; }) }))) return 'cancelado';
     D.ocupado = true;
     var certas = 0;
     var falhas = 0;
@@ -778,6 +777,7 @@
     if (!D.token) { aviso('Clique em "Entrar com Google" primeiro.'); return; }
     if (!estado.arquivos.length) { aviso('Escolha a pasta das músicas (botão lá em cima) primeiro.'); return; }
     D.tudo = true;
+    UI.quieto = true;
     var partes = [];
     try {
       D.msg = 'Atualizando tudo... (não feche esta página)';
@@ -798,6 +798,7 @@
       partes.push(D.msg);
     } finally {
       D.tudo = false;
+      UI.quieto = false;
       if (partes.length) D.msg = partes.join(' ');
       desenhar();
     }
@@ -817,15 +818,19 @@
 
   function cartaoNuvem(c) {
     var n = el('div', null, 'cartao');
-    n.appendChild(el('h2', '☁ Ligar ao Google Drive'));
+    var h2n = el('h2', '☁ Ligar ao Google Drive');
+    h2n.appendChild(UI.dica('Mostra o que está no seu Drive e deixa você subir o que falta.|Só a pasta "' + PASTA_RAIZ + '" do seu Drive.|Sim. Nada é apagado de vez e a lixeira pede a sua confirmação.'));
+    n.appendChild(h2n);
     n.appendChild(el('p', 'O site lê os nomes dos seus áudios no Drive. Só envia arquivos quando você clica em um botão de subir. Nunca apaga de vez: as repetidas da pasta "' + PASTA_RAIZ + '" só vão para a lixeira do Drive, depois que você confirma.', 'suave'));
     var barra = el('div', null, 'barra');
     var bEntrar = el('button', D.token ? 'Entrar de novo' : 'Entrar com Google', D.token ? 'leve' : '');
     bEntrar.onclick = entrar;
+    UI.selo(bEntrar, 'Só lê');
     barra.appendChild(bEntrar);
     if (D.token) {
       var bLer = el('button', 'Ler músicas do Drive');
       bLer.onclick = lerDrive;
+      UI.selo(bLer, 'Só lê');
       barra.appendChild(bLer);
     }
     n.appendChild(barra);
@@ -835,12 +840,11 @@
         bTudo.style.marginBottom = '10px';
         bTudo.disabled = D.ocupado || D.tudo;
         bTudo.onclick = function () { atualizarTudo(); };
-        n.appendChild(bTudo);
       } else {
         n.appendChild(el('p', 'Para usar o "Atualizar tudo", escolha a pasta das músicas (botão lá em cima).', 'suave'));
       }
     }
-    if (D.msg) n.appendChild(el('p', D.msg));
+    if (D.msg && UI.tipoDe(D.msg) !== 'prog') n.appendChild(UI.resumo(D.msg));
 
     if (D.itens) {
       var noSite = {};
@@ -859,6 +863,7 @@
         if (faltam.length && D.token) {
           var bSubir = el('button', '⬆ Subir as ' + faltam.length + ' que faltam para o Drive');
           bSubir.onclick = function () { subirFaltantes(); };
+          UI.selo(bSubir, 'Sobe arquivos');
           bSubir.disabled = D.ocupado || D.tudo;
           n.appendChild(bSubir);
         }
@@ -877,6 +882,7 @@
         var bLixo = el('button', '🗑 Mandar ' + totalLixo + ' cópia(s) repetida(s) para a lixeira do Drive');
         bLixo.style.marginTop = '8px';
         bLixo.onclick = function () { mandarParaLixeira(); };
+        UI.selo(bLixo, 'Vai para a lixeira (você confirma antes)');
         bLixo.disabled = D.ocupado || D.tudo;
         n.appendChild(bLixo);
       }
@@ -912,11 +918,15 @@
 
   function abaDrive(c) {
     cartaoNuvem(c);
+    var adv = document.createElement('details');
+    adv.className = 'avancado';
+    adv.appendChild(el('summary', '🛠 Ferramentas avançadas (arquivos de playlists para o app do celular)'));
     if (!estado.arquivos.length) {
       c.appendChild(el('div', 'Para gerar os arquivos JSON, escolha a pasta das suas músicas (botão roxo lá em cima). O arquivo JSON usa os nomes reais dos seus arquivos.', 'cartao'));
       return;
     }
-    if (estado.aviso) c.appendChild(el('div', estado.aviso, 'cartao'));
+    c.appendChild(adv);
+    if (estado.aviso) adv.appendChild(el('div', estado.aviso, 'cartao'));
 
     // 0) Tudo de uma vez
     var c0 = el('div', null, 'cartao');
@@ -927,7 +937,7 @@
       baixar('playlists-inteligentes.json', D.itens ? playlistsComId() : todasPlaylists(), true);
     };
     c0.appendChild(botTudo);
-    c.appendChild(c0);
+    adv.appendChild(c0);
 
     // 1) Playlists das listas top
     var c1 = el('div', null, 'cartao');
@@ -963,7 +973,7 @@
       };
       c1.appendChild(todas);
     }
-    c.appendChild(c1);
+    adv.appendChild(c1);
 
     // 2) Por cantor
     var c2 = el('div', null, 'cartao');
@@ -1005,7 +1015,7 @@
     } else {
       c2.appendChild(el('p', 'Os nomes dos seus arquivos não têm um traço separando música e cantor (" - "), então não consegui listar os cantores. Você ainda pode digitar o nome do cantor acima.', 'suave'));
     }
-    c.appendChild(c2);
+    adv.appendChild(c2);
 
     // 3) Por pasta
     var c3 = el('div', null, 'cartao');
@@ -1015,11 +1025,16 @@
     var botPastas = el('button', '⬇ Baixar JSON das pastas');
     botPastas.onclick = function () { baixar('playlists-pastas.json', ps); };
     c3.appendChild(botPastas);
-    c.appendChild(c3);
+    adv.appendChild(c3);
   }
 
   function desenhar() {
     desenharNumeros();
+    UI.passos(estado.arquivos.length > 0, !!D.token, !!D.itens);
+    UI.paraQue(estado.aba);
+    var bt = $('botaoTudo');
+    bt.disabled = !D.token || !estado.arquivos.length || D.ocupado || !!D.tudo;
+    $('botaoEntrar').firstChild.nodeValue = D.token ? 'Entrar de novo' : 'Entrar com Google';
     var c = $('conteudo');
     esvaziar(c);
     document.querySelectorAll('.abas button').forEach(function (b) {
@@ -1031,6 +1046,9 @@
     else abaNovidades(c);
   }
 
+  UI.acaoEntrar = entrar;
+  $('botaoEntrar').onclick = entrar;
+  $('botaoTudo').onclick = function () { atualizarTudo(); };
   var botaoDrive = document.createElement('button');
   botaoDrive.setAttribute('data-aba', 'drive');
   botaoDrive.textContent = 'Google Drive';
@@ -1056,7 +1074,7 @@
   // Lê as músicas de uma pasta (escolhida agora ou lembrada de antes).
   async function lerPasta(pasta) {
     try {
-      $('mensagem').textContent = 'Lendo as músicas... aguarde um pouco.';
+      UI.msg('Lendo as músicas... aguarde um pouco.');
       var lista = [];
       var stats = { pastas: 0, ignorados: {}, pastasComProblema: [] };
       await varrer(pasta, pasta.name + '/', lista, stats);
@@ -1066,16 +1084,16 @@
       estado.b = lista.map(function (m) { return m.b; });
       salvar();
       estado.aviso = '';
-      $('mensagem').textContent = resumo(pasta.name, lista.length, stats);
+      UI.msg(resumo(pasta.name, lista.length, stats));
       desenhar();
     } catch (e2) {
-      $('mensagem').textContent = 'Deu erro ao ler as músicas (' + (e2 && e2.name ? e2.name : 'erro') + '). Tente de novo.';
+      UI.msg('Deu erro ao ler as músicas (' + (e2 && e2.name ? e2.name : 'erro') + '). Tente de novo.');
     }
   }
 
   var botao = $('botaoPasta');
   if (!window.showDirectoryPicker) {
-    $('mensagem').textContent = 'Para ler a pasta, abra no Google Chrome ou no Microsoft Edge.';
+    UI.msg('Para ler a pasta, abra no Google Chrome ou no Microsoft Edge.');
     botao.disabled = true;
   }
   botao.onclick = async function () {
@@ -1083,7 +1101,7 @@
     try {
       pasta = await window.showDirectoryPicker({ mode: 'read' });
     } catch (e) {
-      $('mensagem').textContent = 'A escolha da pasta foi cancelada ou o navegador não deixou (' + (e && e.name ? e.name : 'erro') + '). Tente uma pasta que não seja Downloads, Documentos ou Área de Trabalho.';
+      UI.msg('A escolha da pasta foi cancelada ou o navegador não deixou (' + (e && e.name ? e.name : 'erro') + '). Tente uma pasta que não seja Downloads, Documentos ou Área de Trabalho.');
       return;
     }
     await guardarPasta(pasta);
@@ -1102,12 +1120,12 @@
       try {
         var perm = await guardada.requestPermission({ mode: 'read' });
         if (perm !== 'granted') {
-          $('mensagem').textContent = 'Você não deixou o acesso à pasta. Clique de novo e escolha "Permitir", ou use o botão "Escolher pasta das músicas".';
+          UI.msg('Você não deixou o acesso à pasta. Clique de novo e escolha "Permitir", ou use o botão "Escolher pasta das músicas".');
           return;
         }
         await lerPasta(guardada);
       } catch (e) {
-        $('mensagem').textContent = 'Não consegui abrir a pasta de antes (' + (e && e.name ? e.name : 'erro') + '). Use o botão "Escolher pasta das músicas".';
+        UI.msg('Não consegui abrir a pasta de antes (' + (e && e.name ? e.name : 'erro') + '). Use o botão "Escolher pasta das músicas".');
       }
     };
     try {
