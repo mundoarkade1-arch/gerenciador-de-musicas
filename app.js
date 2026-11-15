@@ -1032,7 +1032,12 @@
     // (a) Situação
     var sit = secao(c, 'Situação');
     if (!D.token) {
-      sit.appendChild(el('p', 'Escolha a pasta e entre com o Google (veja o passo lá em cima) para ver o seu Drive aqui.', 'situacao'));
+      sit.appendChild(el('p', 'Entre com o Google para ver o seu Drive aqui. Não precisa escolher a pasta antes.', 'situacao'));
+      var bLogin = el('button', 'Entrar com Google', 'btn-v');
+      bLogin.type = 'button';
+      bLogin.style.marginTop = '16px';
+      bLogin.onclick = entrar;
+      sit.appendChild(bLogin);
     } else if (!D.itens) {
       sit.appendChild(el('p', 'Ainda não li o seu Drive. Use "Ler o Drive" aqui embaixo, ou "Atualizar tudo" lá em cima.', 'situacao'));
     }
@@ -1329,7 +1334,8 @@
       estado.b = lista.map(function (m) { return m.b; });
       salvar();
       estado.aviso = '';
-      UI.msg(resumo(pasta.name, lista.length, stats));
+      if (!lista.length) UI.msg('Não achei nenhuma música na pasta ' + pasta.name + ' (' + stats.pastas + ' pasta(s) lida(s)). Escolha a pasta que tem os arquivos de música, como mp3 ou m4a.');
+      else UI.msg(resumo(pasta.name, lista.length, stats));
       desenhar();
     } catch (e2) {
       UI.msg('Deu erro ao ler as músicas (' + (e2 && e2.name ? e2.name : 'erro') + '). Tente de novo.');
@@ -1388,6 +1394,7 @@
   UI.aoMudar = desenharTopo;
   $('botaoPrincipal').onclick = acaoPrincipal;
   $('botaoAntes').onclick = function () { if (estado.antes) estado.antes.usar(); };
+  $('botaoGoogle').onclick = function () { if (!D.ocupado && !D.tudo && !UI.andamento.ativo) entrar(); };
   document.querySelectorAll('.abas button').forEach(function (b) {
     b.onclick = function () { estado.aba = b.getAttribute('data-aba'); desenhar(true); };
   });

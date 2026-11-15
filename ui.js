@@ -451,6 +451,7 @@
     }
     var antes = $('botaoAntes');
     antes.hidden = !(passo === 1 && !rodando && d.antes);
+    $('botaoGoogle').hidden = !(passo === 1 && !rodando && !d.google);
     if (!antes.hidden) antes.textContent = 'Usar a pasta de antes (' + d.antes.nome + ')';
 
     // Lado direito: o plano
