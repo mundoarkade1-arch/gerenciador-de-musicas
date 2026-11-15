@@ -281,6 +281,7 @@
       var cliente = window.google.accounts.oauth2.initTokenClient({
         client_id: CLIENT_ID,
         scope: YT.ESCOPO,
+        include_granted_scopes: false,
         callback: function (r) {
           if (r && r.access_token) {
             YT.token = r.access_token;
@@ -563,6 +564,7 @@
       var cliente = window.google.accounts.oauth2.initTokenClient({
         client_id: CLIENT_ID,
         scope: ESCOPOS,
+        include_granted_scopes: false,
         callback: function (r) {
           if (r && r.access_token) {
             D.token = r.access_token;
