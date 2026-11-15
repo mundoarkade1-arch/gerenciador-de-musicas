@@ -28,13 +28,16 @@
   --e2: 16px;
   --e3: 24px;
   --fonte: system-ui, "Segoe UI", Roboto, Arial, sans-serif;
+  color-scheme: dark;
 }
 /* Tema claro (opcional, simples) */
 :root[data-tema="claro"] {
   --bg: #F6F6F7; --s1: #FFFFFF; --s2: #F0F0F2; --bd: #E2E2E5; --bd2: #C9CAD0;
   --tx: #16161A; --mu: #5E6168; --r: #C8102E; --rt: #B00B26; --ok: #12703A; --am: #8A5A00;
   --rb: #E7A9B3; --okb: #A5D6B7; --amb: #E1C27D; --trilho: #DADADF; --fo: #16161A;
+  color-scheme: light;
 }
+* { scrollbar-width: thin; scrollbar-color: var(--bd2) transparent; }
 
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
@@ -131,7 +134,7 @@ a { color: var(--rt); font-weight: 600; }
 .numero span { font-size: 14px; color: var(--mu); }
 
 /* ---------- 4. Abas ---------- */
-.abas { display: flex; gap: 30px; margin-top: 56px; border-bottom: 1px solid var(--bd); overflow-x: auto; }
+.abas { display: flex; gap: 30px; margin-top: 56px; border-bottom: 1px solid var(--bd); overflow-x: auto; overflow-y: hidden; }
 .abas button { background: none; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; padding: 0; min-height: 48px; font-size: 16px; color: var(--mu); white-space: nowrap; }
 .abas button:hover { color: var(--tx); }
 .abas button[aria-current="true"] { color: var(--tx); border-bottom-color: var(--r); font-weight: 500; }
