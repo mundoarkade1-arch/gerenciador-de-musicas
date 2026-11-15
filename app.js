@@ -271,11 +271,19 @@
     return limpar(t, false).replace(/ /g, '-').slice(0, 40) || 'playlist';
   }
 
+  // Aviso que aparece embaixo da tela, sempre visível, e some sozinho.
+  function aviso(msg) {
+    var t = document.createElement('div');
+    t.textContent = msg;
+    t.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);max-width:90vw;padding:14px 20px;border-radius:14px;background:#6d28d9;color:#fff;font-size:18px;box-shadow:0 8px 30px rgba(0,0,0,.35);z-index:99;';
+    document.body.appendChild(t);
+    setTimeout(function () { t.remove(); }, 7000);
+  }
+
   function baixar(arquivo, playlists) {
     playlists = playlists.filter(function (p) { return p.faixas.length > 0; });
     if (!playlists.length) {
-      estado.aviso = 'Não achei nenhuma música para essa playlist na sua pasta.';
-      desenhar();
+      aviso('Não achei nenhuma música dessa playlist na sua pasta. Nada foi baixado.');
       return;
     }
     var obj = { formato: 'toxic-playlists', v: 1, gerado: new Date().toISOString(), playlists: playlists };
@@ -289,8 +297,7 @@
     a.remove();
     setTimeout(function () { URL.revokeObjectURL(url); }, 3000);
     var total = playlists.reduce(function (s, p) { return s + p.faixas.length; }, 0);
-    estado.aviso = 'Pronto! Baixei ' + arquivo + ' com ' + playlists.length + ' playlist(s) e ' + total + ' músicas.';
-    desenhar();
+    aviso('Pronto! Baixei ' + arquivo + ' com ' + playlists.length + ' playlist(s) e ' + total + ' músicas.');
   }
 
   function playlistPorCantor(texto) {
@@ -384,7 +391,7 @@
     var gerar = el('button', 'Baixar JSON');
     function gerarCantor() {
       var p = playlistPorCantor(campo.value);
-      if (!p) { estado.aviso = 'Escreva o nome de um cantor.'; desenhar(); return; }
+      if (!p) { aviso('Escreva o nome de um cantor.'); return; }
       baixar('playlist-' + nomeSeguro(campo.value) + '.json', [p]);
     }
     gerar.onclick = gerarCantor;
