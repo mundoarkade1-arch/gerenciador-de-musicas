@@ -594,7 +594,16 @@
     if (!D.itens) return [];
     var noDrive = {};
     D.itens.forEach(function (d) { if (d.site) noDrive[d.k] = true; });
-    return estado.arquivos.filter(function (m) { return m.h && !noDrive[m.k]; });
+    // Se a mesma música está em duas pastas do PC, sobe só uma cópia: a maior.
+    var melhor = {};
+    estado.arquivos.forEach(function (m) {
+      if (m.k && !noDrive[m.k] && (!melhor[m.k] || m.t > melhor[m.k].t)) melhor[m.k] = m;
+    });
+    return estado.arquivos.filter(function (m) {
+      if (!m.h) return false;
+      if (!m.k) return true;
+      return melhor[m.k] === m;
+    });
   }
 
   function aspas(s) { return s.replace(/\\/g, '\\\\').replace(/'/g, "\\'"); }
@@ -797,8 +806,9 @@
       n.appendChild(el('p', 'Na pasta "' + PASTA_RAIZ + '" do Drive: ' + nSite + ' músicas. No resto do Drive: ' + (D.itens.length - nSite) + '.', 'suave'));
 
       if (estado.arquivos.length) {
-        var faltam = estado.arquivos.filter(function (m) { return !noSite[m.k]; });
-        n.appendChild(el('p', 'Do seu PC: ' + (estado.arquivos.length - faltam.length) + ' já estão na pasta "' + PASTA_RAIZ + '" e ' + faltam.length + ' ainda faltam subir para ela.'));
+        var faltam = faltamSubir();
+        var jaTem = estado.arquivos.filter(function (m) { return noSite[m.k]; }).length;
+        n.appendChild(el('p', 'Do seu PC: ' + jaTem + ' já estão na pasta "' + PASTA_RAIZ + '" e ' + faltam.length + ' ainda faltam subir para ela. Se a mesma música está em duas pastas do PC, só uma cópia sobe.'));
         if (faltam.length && D.token) {
           var bSubir = el('button', '⬆ Subir as ' + faltam.length + ' que faltam para o Drive');
           bSubir.onclick = subirFaltantes;
