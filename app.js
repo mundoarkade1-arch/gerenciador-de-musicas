@@ -74,6 +74,40 @@
     } catch (e) { /* sem problema */ }
   }
 
+  // ---------- Lembrar a pasta escolhida (fica só neste navegador) ----------
+
+  function abrirBanco() {
+    return new Promise(function (ok, erro) {
+      var r = indexedDB.open('gm_banco', 1);
+      r.onupgradeneeded = function () { r.result.createObjectStore('pastas'); };
+      r.onsuccess = function () { ok(r.result); };
+      r.onerror = function () { erro(r.error); };
+    });
+  }
+
+  async function guardarPasta(handle) {
+    try {
+      var db = await abrirBanco();
+      await new Promise(function (ok, erro) {
+        var t = db.transaction('pastas', 'readwrite');
+        t.objectStore('pastas').put(handle, 'musicas');
+        t.oncomplete = function () { ok(); };
+        t.onerror = function () { erro(t.error); };
+      });
+    } catch (e) { /* sem problema */ }
+  }
+
+  async function pastaGuardada() {
+    try {
+      var db = await abrirBanco();
+      return await new Promise(function (ok) {
+        var q = db.transaction('pastas').objectStore('pastas').get('musicas');
+        q.onsuccess = function () { ok(q.result || null); };
+        q.onerror = function () { ok(null); };
+      });
+    } catch (e) { return null; }
+  }
+
   function tenho(f) {
     var t = limpar(f.t, true);
     if (!t) return false;
@@ -691,19 +725,8 @@
     return txt;
   }
 
-  var botao = $('botaoPasta');
-  if (!window.showDirectoryPicker) {
-    $('mensagem').textContent = 'Para ler a pasta, abra no Google Chrome ou no Microsoft Edge.';
-    botao.disabled = true;
-  }
-  botao.onclick = async function () {
-    var pasta;
-    try {
-      pasta = await window.showDirectoryPicker({ mode: 'read' });
-    } catch (e) {
-      $('mensagem').textContent = 'A escolha da pasta foi cancelada ou o navegador não deixou (' + (e && e.name ? e.name : 'erro') + '). Tente uma pasta que não seja Downloads, Documentos ou Área de Trabalho.';
-      return;
-    }
+  // Lê as músicas de uma pasta (escolhida agora ou lembrada de antes).
+  async function lerPasta(pasta) {
     try {
       $('mensagem').textContent = 'Lendo as músicas... aguarde um pouco.';
       var lista = [];
@@ -719,8 +742,51 @@
     } catch (e2) {
       $('mensagem').textContent = 'Deu erro ao ler as músicas (' + (e2 && e2.name ? e2.name : 'erro') + '). Tente de novo.';
     }
+  }
+
+  var botao = $('botaoPasta');
+  if (!window.showDirectoryPicker) {
+    $('mensagem').textContent = 'Para ler a pasta, abra no Google Chrome ou no Microsoft Edge.';
+    botao.disabled = true;
+  }
+  botao.onclick = async function () {
+    var pasta;
+    try {
+      pasta = await window.showDirectoryPicker({ mode: 'read' });
+    } catch (e) {
+      $('mensagem').textContent = 'A escolha da pasta foi cancelada ou o navegador não deixou (' + (e && e.name ? e.name : 'erro') + '). Tente uma pasta que não seja Downloads, Documentos ou Área de Trabalho.';
+      return;
+    }
+    await guardarPasta(pasta);
+    await lerPasta(pasta);
   };
+
+  // Botão "Usar a pasta de antes": aparece se o site lembra de uma pasta.
+  async function iniciar() {
+    if (!window.showDirectoryPicker) return;
+    var guardada = await pastaGuardada();
+    if (!guardada) return;
+    var botaoAntes = el('button', '↩ Usar a pasta de antes (' + guardada.name + ')', 'leve');
+    botaoAntes.style.marginLeft = '10px';
+    botao.parentNode.insertBefore(botaoAntes, botao.nextSibling);
+    botaoAntes.onclick = async function () {
+      try {
+        var perm = await guardada.requestPermission({ mode: 'read' });
+        if (perm !== 'granted') {
+          $('mensagem').textContent = 'Você não deixou o acesso à pasta. Clique de novo e escolha "Permitir", ou use o botão "Escolher pasta das músicas".';
+          return;
+        }
+        await lerPasta(guardada);
+      } catch (e) {
+        $('mensagem').textContent = 'Não consegui abrir a pasta de antes (' + (e && e.name ? e.name : 'erro') + '). Use o botão "Escolher pasta das músicas".';
+      }
+    };
+    try {
+      if (await guardada.queryPermission({ mode: 'read' }) === 'granted') await lerPasta(guardada);
+    } catch (e) { /* sem problema */ }
+  }
 
   carregar();
   desenhar();
+  iniciar();
 })();
