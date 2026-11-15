@@ -257,18 +257,71 @@
   function nomeDoArquivo(c) { return c.slice(c.lastIndexOf('/') + 1); }
   function pastaDoArquivo(c) { return c.slice(0, c.lastIndexOf('/')); }
 
-  // "Artista - Título.mp3" vira artista e título.
-  function lerNome(c) {
-    var nome = nomeDoArquivo(c);
+  // Separa "Grelo, Henrique & Juliano" em ["Grelo", "Henrique & Juliano"].
+  function nomesArtistas(s) {
+    return (s || '').split(/\s*,\s*|\s+(?:feat|ft|part)\.?\s+/i).map(function (x) { return x.trim(); }).filter(Boolean);
+  }
+
+  // Descobre, para cada arquivo, onde está o cantor: no começo ("Cantor - Música")
+  // ou no fim ("Música - Cantor"). Aceita os dois jeitos, misturados.
+  // Ele vê quais nomes se repetem em muitos arquivos: esses são os cantores.
+  function preparar(lista) {
+    var cont = {};
+    var dados = lista.map(function (m) {
+      var nome = nomeDoArquivo(m.c);
+      var i = nome.lastIndexOf('.');
+      var sem = i < 0 ? nome : nome.slice(0, i);
+      return { m: m, sem: sem, ps: sem.split(' - ').map(function (x) { return x.trim(); }).filter(Boolean), lado: null };
+    });
+    function chaves(s) {
+      return nomesArtistas(s).map(function (x) { return limpar(x, true); }).filter(Boolean);
+    }
+    function forca(s) {
+      var mx = 0;
+      chaves(s).forEach(function (k) { if (cont[k] > mx) mx = cont[k]; });
+      return mx;
+    }
+    dados.forEach(function (d) {
+      if (d.ps.length < 2) return;
+      chaves(d.ps[0]).concat(chaves(d.ps[d.ps.length - 1])).forEach(function (k) {
+        cont[k] = (cont[k] || 0) + 1;
+      });
+    });
+    var votos = { first: 0, last: 0 };
+    dados.forEach(function (d) {
+      if (d.ps.length < 2) return;
+      var f = forca(d.ps[0]);
+      var l = forca(d.ps[d.ps.length - 1]);
+      if (Math.max(f, l) >= 3 && f !== l) {
+        d.lado = f > l ? 'first' : 'last';
+        votos[d.lado]++;
+      }
+    });
+    // Se não deu para saber, usa o jeito que mais aparece. Empate: "Música - Cantor".
+    var padrao = votos.first > votos.last ? 'first' : 'last';
+    dados.forEach(function (d) {
+      var n;
+      if (d.ps.length < 2) {
+        n = { a: '', as: [], t: d.sem.trim() };
+      } else {
+        var lado = d.lado || padrao;
+        var a = lado === 'first' ? d.ps[0] : d.ps[d.ps.length - 1];
+        var t = lado === 'first' ? d.ps.slice(1).join(' - ') : d.ps.slice(0, -1).join(' - ');
+        n = { a: a, as: nomesArtistas(a), t: t };
+      }
+      d.m.n = n;
+    });
+  }
+
+  function lerNome(m) {
+    if (m.n) return m.n;
+    var nome = nomeDoArquivo(m.c);
     var i = nome.lastIndexOf('.');
-    var sem = i < 0 ? nome : nome.slice(0, i);
-    var j = sem.indexOf(' - ');
-    if (j > 0) return { a: sem.slice(0, j).trim(), t: sem.slice(j + 3).trim() };
-    return { a: '', t: sem.trim() };
+    return { a: '', as: [], t: (i < 0 ? nome : nome.slice(0, i)).trim() };
   }
 
   function faixaLocal(m) {
-    var n = lerNome(m.c);
+    var n = lerNome(m);
     return { fn: nomeDoArquivo(m.c), p: pastaDoArquivo(m.c), t: n.t, a: n.a };
   }
 
@@ -356,12 +409,16 @@
   function artistas() {
     var mapa = {};
     estado.arquivos.forEach(function (m) {
-      var n = lerNome(m.c);
-      if (!n.a) return;
-      var k = limpar(n.a, true);
-      if (!k) return;
-      if (!mapa[k]) mapa[k] = { nome: n.a, faixas: [] };
-      mapa[k].faixas.push(faixaLocal(m));
+      var n = lerNome(m);
+      if (!n.as || !n.as.length) return;
+      var jaFoi = {};
+      n.as.forEach(function (nomeArt) {
+        var k = limpar(nomeArt, true);
+        if (!k || jaFoi[k]) return;
+        jaFoi[k] = true;
+        if (!mapa[k]) mapa[k] = { nome: nomeArt, faixas: [] };
+        mapa[k].faixas.push(faixaLocal(m));
+      });
     });
     return Object.keys(mapa).map(function (k) { return mapa[k]; }).sort(function (x, y) { return y.faixas.length - x.faixas.length; });
   }
@@ -660,7 +717,7 @@
 
     var arts = artistas();
     if (arts.length) {
-      c2.appendChild(el('p', 'Cantores que você mais tem (pelo nome do arquivo "Cantor - Música"):', 'suave'));
+      c2.appendChild(el('p', 'Cantores que você mais tem (o site entende "Cantor - Música" e "Música - Cantor"):', 'suave'));
       var chips = el('div', null, 'barra');
       arts.slice(0, 30).forEach(function (a) {
         var b = el('button', a.nome + ' (' + a.faixas.length + ')', 'leve');
@@ -675,7 +732,7 @@
       };
       if (muitos.length) c2.appendChild(botCada);
     } else {
-      c2.appendChild(el('p', 'Os nomes dos seus arquivos não têm o formato "Cantor - Música", então não consegui listar os cantores. Você ainda pode digitar o nome do cantor acima.', 'suave'));
+      c2.appendChild(el('p', 'Os nomes dos seus arquivos não têm um traço separando música e cantor (" - "), então não consegui listar os cantores. Você ainda pode digitar o nome do cantor acima.', 'suave'));
     }
     c.appendChild(c2);
 
@@ -732,6 +789,7 @@
       var lista = [];
       var stats = { pastas: 0, ignorados: {}, pastasComProblema: [] };
       await varrer(pasta, pasta.name + '/', lista, stats);
+      preparar(lista);
       estado.arquivos = lista;
       estado.cache = {};
       estado.b = lista.map(function (m) { return m.b; });
