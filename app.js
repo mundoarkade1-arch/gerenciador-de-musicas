@@ -3,6 +3,7 @@
   var EXT = ['mp3', 'm4a', 'flac', 'wav', 'ogg', 'wma', 'aac', 'opus', 'm4b', 'aif', 'aiff', 'ape', 'wv', 'mka'];
   var CLIENT_ID = '22049376827-k0tavpkj93lp2e2bc43ga600fp7ktu59.apps.googleusercontent.com';
   var ESCOPOS = 'https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.file';
+  var PASTA_RAIZ = 'Músicas do Site';
   var CH = window.CHARTS || { atualizado: null, listas: {}, historico: [] };
   var $ = function (id) { return document.getElementById(id); };
   var estado = { arquivos: [], b: [], aba: 'repetidas', lista: null, soFalta: false, tinhaSalvo: false, n: 50, cache: {}, aviso: '' };
@@ -46,7 +47,7 @@
           if (EXT.indexOf(ext) >= 0) {
             var f = await item.getFile();
             var s = item.name.slice(0, i);
-            lista.push({ c: cam + item.name, k: limpar(s, false), b: limpar(s, true), t: f.size });
+            lista.push({ c: cam + item.name, k: limpar(s, false), b: limpar(s, true), t: f.size, h: item });
           } else {
             stats.ignorados[ext] = (stats.ignorados[ext] || 0) + 1;
           }
@@ -583,6 +584,93 @@
     desenhar();
   }
 
+  // ---------- Google Drive: subir as músicas que faltam ----------
+
+  function faltamSubir() {
+    if (!D.itens) return [];
+    var noDrive = {};
+    D.itens.forEach(function (d) { noDrive[d.k] = true; });
+    return estado.arquivos.filter(function (m) { return m.h && !noDrive[m.k]; });
+  }
+
+  function aspas(s) { return s.replace(/\\/g, '\\\\').replace(/'/g, "\\'"); }
+
+  // Acha (ou cria) uma pasta dentro de outra, no Drive.
+  async function achaOuCriaPasta(nome, paiId) {
+    var achados = await listarDrive("name='" + aspas(nome) + "' and mimeType='application/vnd.google-apps.folder' and '" + paiId + "' in parents and trashed=false", 'id');
+    if (achados.length) return achados[0].id;
+    var nova = await api(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: nome, mimeType: 'application/vnd.google-apps.folder', parents: [paiId] }) });
+    return nova.id;
+  }
+
+  // Cria o caminho inteiro, tipo "Sunnify/Henrique & Juliano Radio - Spotify".
+  async function pastaDoCaminho(caminho, cache) {
+    if (cache[caminho] !== undefined) return cache[caminho];
+    var i = caminho.lastIndexOf('/');
+    var paiCam = i < 0 ? '' : caminho.slice(0, i);
+    var nome = i < 0 ? caminho : caminho.slice(i + 1);
+    var paiId = paiCam ? await pastaDoCaminho(paiCam, cache) : cache[''];
+    var id = await achaOuCriaPasta(nome, paiId);
+    cache[caminho] = id;
+    return id;
+  }
+
+  async function subirArquivo(m, pastaId) {
+    var f = await m.h.getFile();
+    var lim = 'gm' + Date.now() + Math.random().toString(36).slice(2);
+    var meta = JSON.stringify({ name: nomeDoArquivo(m.c), parents: [pastaId] });
+    var cab = '--' + lim + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' + meta + '\r\n--' + lim + '\r\nContent-Type: ' + (f.type || 'audio/mpeg') + '\r\n\r\n';
+    var corpo = new Blob([cab, f, '\r\n--' + lim + '--']);
+    return api('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
+      method: 'POST',
+      headers: { 'Content-Type': 'multipart/related; boundary=' + lim },
+      body: corpo
+    });
+  }
+
+  async function subirFaltantes() {
+    if (D.ocupado) return;
+    var lista = faltamSubir();
+    if (!lista.length) { aviso('Não falta nenhuma música para subir.'); return; }
+    D.ocupado = true;
+    var certas = 0;
+    var falhas = 0;
+    var cache = {};
+    try {
+      D.msg = 'Preparando a pasta "' + PASTA_RAIZ + '" no Drive...';
+      desenhar();
+      cache[''] = await achaOuCriaPasta(PASTA_RAIZ, 'root');
+      for (var i = 0; i < lista.length; i++) {
+        var m = lista[i];
+        D.msg = 'Subindo ' + (i + 1) + ' de ' + lista.length + ': ' + nomeDoArquivo(m.c) + ' (não feche esta página)';
+        desenhar();
+        try {
+          var pid = await pastaDoCaminho(pastaDoArquivo(m.c), cache);
+          var r = await subirArquivo(m, pid);
+          D.itens.push({ id: r.id, fn: nomeDoArquivo(m.c), p: PASTA_RAIZ + '/' + pastaDoArquivo(m.c), k: m.k, b: m.b, t: m.t });
+          certas++;
+        } catch (e1) {
+          if (!D.token) throw e1;
+          falhas++;
+        }
+      }
+    } catch (e) {
+      D.ocupado = false;
+      D.msg = 'Parou depois de subir ' + certas + ' música(s). ' + e.message;
+      desenhar();
+      return;
+    }
+    D.ocupado = false;
+    var texto = 'Subi ' + certas + ' música(s) para a pasta "' + PASTA_RAIZ + '".' + (falhas ? ' ' + falhas + ' não deu certo. Clique no botão de novo para tentar essas.' : '');
+    if (certas > 0) {
+      await enviarParaDrive();
+      D.msg = texto + ' ' + D.msg;
+    } else {
+      D.msg = texto;
+    }
+    desenhar();
+  }
+
   function listaSimples(c, titulo, linhas) {
     c.appendChild(el('h3', titulo + ' (' + linhas.length + ')'));
     if (!linhas.length) { c.appendChild(el('p', 'Nenhuma. 🎉', 'suave')); return; }
@@ -595,7 +683,7 @@
   function cartaoNuvem(c) {
     var n = el('div', null, 'cartao');
     n.appendChild(el('h2', '☁ Ligar ao Google Drive'));
-    n.appendChild(el('p', 'O site só LÊ os nomes dos seus áudios no Drive. O único arquivo que ele cria é o JSON de playlists, na pasta "Toxic Playlists".', 'suave'));
+    n.appendChild(el('p', 'O site lê os nomes dos seus áudios no Drive. Ele só envia arquivos quando você clica em um botão de subir. Nunca apaga nada.', 'suave'));
     var barra = el('div', null, 'barra');
     var bEntrar = el('button', D.token ? 'Entrar de novo' : 'Entrar com Google', D.token ? 'leve' : '');
     bEntrar.onclick = entrar;
@@ -620,6 +708,12 @@
       if (estado.arquivos.length) {
         var faltam = estado.arquivos.filter(function (m) { return !noDrive[m.k]; });
         n.appendChild(el('p', 'Do seu PC: ' + (estado.arquivos.length - faltam.length) + ' já estão no Drive e ' + faltam.length + ' ainda faltam subir.'));
+        if (faltam.length && D.token) {
+          var bSubir = el('button', '⬆ Subir as ' + faltam.length + ' que faltam para o Drive');
+          bSubir.onclick = subirFaltantes;
+          bSubir.disabled = D.ocupado;
+          n.appendChild(bSubir);
+        }
         listaSimples(n, 'Faltam subir para o Drive', faltam.map(function (m) { return m.c; }));
       } else {
         n.appendChild(el('p', 'Para comparar com o PC, escolha a pasta das músicas (botão lá em cima).', 'suave'));
