@@ -246,6 +246,23 @@
       ? 'Já estão na playlist: ' + feitas + ' de ' + L.faixas.length + '.' + (sem ? ' Sem resultado na busca: ' + sem + '.' : '') + ' Faltam: ' + (L.faixas.length - feitas - sem) + '.'
       : 'A playlist ainda não foi criada. Ela é criada como privada, só você vê.';
     cx.appendChild(el('p', txt, 'suave'));
+    if (sem) {
+      var fora = [];
+      L.faixas.forEach(function (f, i) { if (ytl.sem[f.id]) fora.push((i + 1) + '. ' + f.a + ' - ' + f.t); });
+      var caixaSem = el('div', null, 'resumo t-aviso');
+      caixaSem.appendChild(el('p', 'Não consegui colocar ' + sem + ' música(s) na playlist (não achei no YouTube):'));
+      var ulSem = el('ul');
+      ulSem.style.margin = '6px 0 12px';
+      ulSem.style.paddingLeft = '20px';
+      fora.forEach(function (t) { ulSem.appendChild(el('li', t)); });
+      caixaSem.appendChild(ulSem);
+      var bCop = el('button', '📋 Copiar essa lista', 'leve');
+      bCop.onclick = function () {
+        navigator.clipboard.writeText(fora.join('\n')).then(function () { bCop.textContent = 'Copiado! ✔'; }, function () { bCop.textContent = 'Não consegui copiar'; });
+      };
+      caixaSem.appendChild(bCop);
+      cx.appendChild(caixaSem);
+    }
     cx.appendChild(el('p', 'Cota grátis de hoje: usei ' + YT.usado() + ' de ' + YT.COTA + '. Hoje ainda cabem cerca de ' + q.lote.length + ' músicas. O que não couber continua amanhã, de onde parou.', 'suave'));
     var bar = el('div', null, 'barra');
     if (!YT.token) {
@@ -314,7 +331,7 @@
       var ytl = YT.lista(id);
       var feitas = L.faixas.filter(function (f) { return ytl.feitas[f.id]; }).length;
       var txt = 'Pronto! Coloquei ' + r.colocadas + ' música(s) na playlist.';
-      if (r.semNovas) txt += ' ' + r.semNovas + ' não achei no YouTube.';
+      if (r.semNovas) txt += ' ' + r.semNovas + ' não achei no YouTube (veja quais no quadro amarelo da playlist).';
       if (r.parou === 'completa') txt += ' A playlist está completa.';
       else txt += ' Já estão ' + feitas + ' de ' + L.faixas.length + '.' + (r.parou === 'cota' ? ' A cota grátis de hoje acabou: volte amanhã (ela renova de madrugada, entre 4h e 5h em Brasília) e clique de novo para continuar.' : ' Clique de novo para continuar.');
       D.msg = txt;
