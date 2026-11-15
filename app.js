@@ -1,6 +1,6 @@
 (function () {
   'use strict';
-  var EXT = ['mp3', 'm4a', 'flac', 'wav', 'ogg', 'wma', 'aac', 'opus'];
+  var EXT = ['mp3', 'm4a', 'flac', 'wav', 'ogg', 'wma', 'aac', 'opus', 'm4b', 'aif', 'aiff', 'ape', 'wv', 'mka'];
   var CH = window.CHARTS || { atualizado: null, listas: {}, historico: [] };
   var $ = function (id) { return document.getElementById(id); };
   var estado = { arquivos: [], b: [], aba: 'repetidas', lista: null, soFalta: false, tinhaSalvo: false };
@@ -22,18 +22,34 @@
     return t.replace(/[^a-z0-9]+/g, ' ').trim();
   }
 
-  async function varrer(dir, cam, lista) {
-    for await (var e of dir.values()) {
-      if (e.kind === 'directory') {
-        await varrer(e, cam + e.name + '/', lista);
-      } else {
-        var i = e.name.lastIndexOf('.');
-        var ext = i < 0 ? '' : e.name.slice(i + 1).toLowerCase();
-        if (EXT.indexOf(ext) >= 0) {
-          var f = await e.getFile();
-          var s = e.name.slice(0, i);
-          lista.push({ c: cam + e.name, k: limpar(s, false), b: limpar(s, true), t: f.size });
+  // Lê a pasta e todas as subpastas. Se uma pasta der problema, pula ela e continua.
+  async function varrer(dir, cam, lista, stats) {
+    stats.pastas++;
+    var entradas = [];
+    try {
+      for await (var e of dir.values()) { entradas.push(e); }
+    } catch (erro) {
+      stats.pastasComProblema.push(cam);
+      return;
+    }
+    for (var n = 0; n < entradas.length; n++) {
+      var item = entradas[n];
+      try {
+        if (item.kind === 'directory') {
+          await varrer(item, cam + item.name + '/', lista, stats);
+        } else {
+          var i = item.name.lastIndexOf('.');
+          var ext = i < 0 ? '(sem tipo)' : item.name.slice(i + 1).toLowerCase();
+          if (EXT.indexOf(ext) >= 0) {
+            var f = await item.getFile();
+            var s = item.name.slice(0, i);
+            lista.push({ c: cam + item.name, k: limpar(s, false), b: limpar(s, true), t: f.size });
+          } else {
+            stats.ignorados[ext] = (stats.ignorados[ext] || 0) + 1;
+          }
         }
+      } catch (erro2) {
+        stats.pastasComProblema.push(cam + item.name);
       }
     }
   }
@@ -214,24 +230,44 @@
     b.onclick = function () { estado.aba = b.getAttribute('data-aba'); desenhar(); };
   });
 
+  // Texto que explica o que foi lido e o que foi ignorado.
+  function resumo(pastaNome, achadas, stats) {
+    var txt = 'Pronto! Pasta: ' + pastaNome + '. Pastas lidas: ' + stats.pastas + '. Músicas achadas: ' + achadas + '.';
+    var tipos = Object.keys(stats.ignorados).sort(function (a, b) { return stats.ignorados[b] - stats.ignorados[a]; }).slice(0, 6);
+    if (tipos.length) {
+      txt += ' Outros arquivos ignorados: ' + tipos.map(function (t) { return t + ' (' + stats.ignorados[t] + ')'; }).join(', ') + '.';
+    }
+    if (stats.pastasComProblema.length) {
+      txt += ' Não consegui abrir ' + stats.pastasComProblema.length + ' item(ns), por exemplo: ' + stats.pastasComProblema.slice(0, 3).join(' | ') + '.';
+    }
+    return txt;
+  }
+
   var botao = $('botaoPasta');
   if (!window.showDirectoryPicker) {
     $('mensagem').textContent = 'Para ler a pasta, abra no Google Chrome ou no Microsoft Edge.';
     botao.disabled = true;
   }
   botao.onclick = async function () {
+    var pasta;
     try {
-      var pasta = await window.showDirectoryPicker({ mode: 'read' });
+      pasta = await window.showDirectoryPicker({ mode: 'read' });
+    } catch (e) {
+      $('mensagem').textContent = 'A escolha da pasta foi cancelada ou o navegador não deixou (' + (e && e.name ? e.name : 'erro') + '). Tente uma pasta que não seja Downloads, Documentos ou Área de Trabalho.';
+      return;
+    }
+    try {
       $('mensagem').textContent = 'Lendo as músicas... aguarde um pouco.';
       var lista = [];
-      await varrer(pasta, pasta.name + '/', lista);
+      var stats = { pastas: 0, ignorados: {}, pastasComProblema: [] };
+      await varrer(pasta, pasta.name + '/', lista, stats);
       estado.arquivos = lista;
       estado.b = lista.map(function (m) { return m.b; });
       salvar();
-      $('mensagem').textContent = 'Pronto! Pasta lida: ' + pasta.name;
+      $('mensagem').textContent = resumo(pasta.name, lista.length, stats);
       desenhar();
-    } catch (e) {
-      $('mensagem').textContent = 'Não foi possível ler a pasta. Tente de novo.';
+    } catch (e2) {
+      $('mensagem').textContent = 'Deu erro ao ler as músicas (' + (e2 && e2.name ? e2.name : 'erro') + '). Tente de novo.';
     }
   };
 
