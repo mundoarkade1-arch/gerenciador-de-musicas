@@ -1,9 +1,12 @@
 (function () {
   'use strict';
   var EXT = ['mp3', 'm4a', 'flac', 'wav', 'ogg', 'wma', 'aac', 'opus', 'm4b', 'aif', 'aiff', 'ape', 'wv', 'mka'];
+  var CLIENT_ID = '22049376827-k0tavpkj93lp2e2bc43ga600fp7ktu59.apps.googleusercontent.com';
+  var ESCOPOS = 'https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.file';
   var CH = window.CHARTS || { atualizado: null, listas: {}, historico: [] };
   var $ = function (id) { return document.getElementById(id); };
   var estado = { arquivos: [], b: [], aba: 'repetidas', lista: null, soFalta: false, tinhaSalvo: false, n: 50, cache: {}, aviso: '' };
+  var D = { token: null, itens: null, msg: '', ocupado: false };
 
   function el(tag, txt, cls) {
     var e = document.createElement(tag);
@@ -345,9 +348,210 @@
     });
   }
 
+  function todasPlaylists() {
+    var todas = Object.keys(CH.listas).map(function (id) { return playlistDaLista(id, estado.n); });
+    artistas().filter(function (a) { return a.faixas.length >= 5; }).forEach(function (a) { todas.push(plArtista(a)); });
+    pastas().forEach(function (p) { todas.push(p); });
+    return todas;
+  }
+
+  // ---------- Google Drive: entrar com a conta e ler o Drive ----------
+
+  var API = 'https://www.googleapis.com/drive/v3/files';
+
+  function carregarGoogle() {
+    return new Promise(function (ok, erro) {
+      if (window.google && window.google.accounts && window.google.accounts.oauth2) { ok(); return; }
+      var s = document.createElement('script');
+      s.src = 'https://accounts.google.com/gsi/client';
+      s.onload = function () { ok(); };
+      s.onerror = function () { erro(new Error('Não consegui carregar o login do Google.')); };
+      document.head.appendChild(s);
+    });
+  }
+
+  async function entrar() {
+    try {
+      await carregarGoogle();
+      var cliente = window.google.accounts.oauth2.initTokenClient({
+        client_id: CLIENT_ID,
+        scope: ESCOPOS,
+        callback: function (r) {
+          if (r && r.access_token) {
+            D.token = r.access_token;
+            D.msg = 'Conectado ao Google Drive. Agora clique em "Ler músicas do Drive".';
+          } else {
+            D.msg = 'O login não deu certo' + (r && r.error ? ' (' + r.error + ')' : '') + '. Tente de novo.';
+          }
+          desenhar();
+        },
+        error_callback: function (e) {
+          D.msg = 'O login foi cancelado ou bloqueado' + (e && e.type ? ' (' + e.type + ')' : '') + '. Tente de novo.';
+          desenhar();
+        }
+      });
+      cliente.requestAccessToken({ prompt: '' });
+    } catch (e) {
+      D.msg = e.message;
+      desenhar();
+    }
+  }
+
+  async function api(url, opcoes) {
+    opcoes = opcoes || {};
+    opcoes.headers = Object.assign({ Authorization: 'Bearer ' + D.token }, opcoes.headers || {});
+    var r = await fetch(url, opcoes);
+    if (r.status === 401) { D.token = null; throw new Error('O login do Google venceu. Clique em "Entrar com Google" de novo.'); }
+    if (!r.ok) throw new Error('O Google respondeu com erro ' + r.status + '.');
+    return r.json();
+  }
+
+  async function listarDrive(q, campos) {
+    var out = [];
+    var tk = '';
+    do {
+      var u = API + '?q=' + encodeURIComponent(q) + '&fields=' + encodeURIComponent('nextPageToken,files(' + campos + ')') + '&pageSize=1000' + (tk ? '&pageToken=' + encodeURIComponent(tk) : '');
+      var r = await api(u);
+      out = out.concat(r.files || []);
+      tk = r.nextPageToken;
+    } while (tk);
+    return out;
+  }
+
+  async function lerDrive() {
+    if (D.ocupado) return;
+    D.ocupado = true;
+    try {
+      D.msg = 'Lendo o seu Drive... pode demorar um pouco.';
+      desenhar();
+      var pastasDrive = await listarDrive("mimeType='application/vnd.google-apps.folder' and trashed=false", 'id,name,parents');
+      var mp = {};
+      pastasDrive.forEach(function (p) { mp[p.id] = p; });
+      function caminho(id) {
+        var partes = [];
+        var n = 0;
+        while (id && mp[id] && n++ < 30) { partes.unshift(mp[id].name); id = (mp[id].parents || [])[0]; }
+        return partes.join('/');
+      }
+      var arqs = await listarDrive("(mimeType contains 'audio/' or mimeType='application/octet-stream') and trashed=false", 'id,name,size,parents');
+      D.itens = [];
+      arqs.forEach(function (f) {
+        var i = f.name.lastIndexOf('.');
+        if (i < 0 || EXT.indexOf(f.name.slice(i + 1).toLowerCase()) < 0) return;
+        var s = f.name.slice(0, i);
+        D.itens.push({ id: f.id, fn: f.name, p: caminho((f.parents || [])[0]), k: limpar(s, false), b: limpar(s, true), t: Number(f.size || 0) });
+      });
+      D.msg = 'Pronto! Achei ' + D.itens.length + ' músicas no seu Drive.';
+    } catch (e) {
+      D.msg = 'Deu erro: ' + e.message;
+    }
+    D.ocupado = false;
+    desenhar();
+  }
+
+  function playlistsComId() {
+    var mapa = {};
+    D.itens.forEach(function (d) { mapa[d.fn.toLowerCase()] = d.id; });
+    return todasPlaylists().map(function (p) {
+      p.faixas = p.faixas.map(function (f) {
+        var id = mapa[f.fn.toLowerCase()];
+        return id ? Object.assign({ id: id }, f) : f;
+      });
+      return p;
+    });
+  }
+
+  async function enviarParaDrive() {
+    if (D.ocupado) return;
+    D.ocupado = true;
+    try {
+      D.msg = 'Enviando o JSON para o Drive...';
+      desenhar();
+      var obj = { formato: 'toxic-playlists', v: 2, gerado: new Date().toISOString(), playlists: playlistsComId() };
+      var conteudo = JSON.stringify(obj, null, 1);
+      var pastasT = await listarDrive("name='Toxic Playlists' and mimeType='application/vnd.google-apps.folder' and trashed=false", 'id');
+      var pastaId;
+      if (pastasT.length) {
+        pastaId = pastasT[0].id;
+      } else {
+        var nova = await api(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Toxic Playlists', mimeType: 'application/vnd.google-apps.folder' }) });
+        pastaId = nova.id;
+      }
+      var nomeArq = 'playlists-inteligentes.json';
+      var antigos = await listarDrive("name='" + nomeArq + "' and '" + pastaId + "' in parents and trashed=false", 'id');
+      var lim = 'gm' + Date.now();
+      var meta = antigos.length ? {} : { name: nomeArq, parents: [pastaId] };
+      var corpo = '--' + lim + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' + JSON.stringify(meta) + '\r\n--' + lim + '\r\nContent-Type: application/json\r\n\r\n' + conteudo + '\r\n--' + lim + '--';
+      var url = 'https://www.googleapis.com/upload/drive/v3/files' + (antigos.length ? '/' + antigos[0].id : '') + '?uploadType=multipart';
+      await api(url, { method: antigos.length ? 'PATCH' : 'POST', headers: { 'Content-Type': 'multipart/related; boundary=' + lim }, body: corpo });
+      D.msg = 'Pronto! O arquivo ' + nomeArq + ' está no seu Drive, na pasta "Toxic Playlists".';
+    } catch (e) {
+      D.msg = 'Deu erro ao enviar: ' + e.message;
+    }
+    D.ocupado = false;
+    desenhar();
+  }
+
+  function listaSimples(c, titulo, linhas) {
+    c.appendChild(el('h3', titulo + ' (' + linhas.length + ')'));
+    if (!linhas.length) { c.appendChild(el('p', 'Nenhuma. 🎉', 'suave')); return; }
+    var caixa = el('div', null, 'rolagem');
+    linhas.slice(0, 200).forEach(function (t) { caixa.appendChild(el('div', t, 'item')); });
+    c.appendChild(caixa);
+    if (linhas.length > 200) c.appendChild(el('p', 'Mostrando só as 200 primeiras.', 'suave'));
+  }
+
+  function cartaoNuvem(c) {
+    var n = el('div', null, 'cartao');
+    n.appendChild(el('h2', '☁ Ligar ao Google Drive'));
+    n.appendChild(el('p', 'O site só LÊ os nomes dos seus áudios no Drive. O único arquivo que ele cria é o JSON de playlists, na pasta "Toxic Playlists".', 'suave'));
+    var barra = el('div', null, 'barra');
+    var bEntrar = el('button', D.token ? 'Entrar de novo' : 'Entrar com Google', D.token ? 'leve' : '');
+    bEntrar.onclick = entrar;
+    barra.appendChild(bEntrar);
+    if (D.token) {
+      var bLer = el('button', 'Ler músicas do Drive');
+      bLer.onclick = lerDrive;
+      barra.appendChild(bLer);
+    }
+    n.appendChild(barra);
+    if (D.msg) n.appendChild(el('p', D.msg));
+
+    if (D.itens) {
+      var noDrive = {};
+      var gd = {};
+      D.itens.forEach(function (d) {
+        noDrive[d.k] = true;
+        if (d.k) (gd[d.k] = gd[d.k] || []).push(d);
+      });
+      var rep = Object.keys(gd).filter(function (k) { return gd[k].length > 1; }).sort(function (a, b) { return gd[b].length - gd[a].length; });
+
+      if (estado.arquivos.length) {
+        var faltam = estado.arquivos.filter(function (m) { return !noDrive[m.k]; });
+        n.appendChild(el('p', 'Do seu PC: ' + (estado.arquivos.length - faltam.length) + ' já estão no Drive e ' + faltam.length + ' ainda faltam subir.'));
+        listaSimples(n, 'Faltam subir para o Drive', faltam.map(function (m) { return m.c; }));
+      } else {
+        n.appendChild(el('p', 'Para comparar com o PC, escolha a pasta das músicas (botão lá em cima).', 'suave'));
+      }
+
+      listaSimples(n, 'Repetidas dentro do Drive', rep.map(function (k) {
+        return gd[k].map(function (d) { return d.p + '/' + d.fn + ' (' + (d.t / 1048576).toFixed(1) + ' MB)'; }).join('  |  ');
+      }));
+
+      if (estado.arquivos.length) {
+        var bEnv = el('button', '⬆ Colocar playlists no Drive (com o id de cada música)');
+        bEnv.style.marginTop = '12px';
+        bEnv.onclick = enviarParaDrive;
+        n.appendChild(bEnv);
+      }
+    }
+    c.appendChild(n);
+  }
+
   function abaDrive(c) {
+    cartaoNuvem(c);
     if (!estado.arquivos.length) {
-      c.appendChild(el('div', 'Primeiro escolha a pasta das suas músicas (botão roxo lá em cima). O arquivo JSON usa os nomes reais dos seus arquivos.', 'cartao'));
+      c.appendChild(el('div', 'Para gerar os arquivos JSON, escolha a pasta das suas músicas (botão roxo lá em cima). O arquivo JSON usa os nomes reais dos seus arquivos.', 'cartao'));
       return;
     }
     if (estado.aviso) c.appendChild(el('div', estado.aviso, 'cartao'));
@@ -358,10 +562,7 @@
     c0.appendChild(el('p', 'Um único arquivo com as listas top, uma playlist para cada cantor (5 músicas ou mais) e uma para cada pasta. Cada playlist leva também uma regra, para o seu app achar músicas novas sozinho quando o Drive crescer.', 'suave'));
     var botTudo = el('button', '⬇ Baixar playlists inteligentes');
     botTudo.onclick = function () {
-      var todas = Object.keys(CH.listas).map(function (id) { return playlistDaLista(id, estado.n); });
-      artistas().filter(function (a) { return a.faixas.length >= 5; }).forEach(function (a) { todas.push(plArtista(a)); });
-      pastas().forEach(function (p) { todas.push(p); });
-      baixar('playlists-inteligentes.json', todas, true);
+      baixar('playlists-inteligentes.json', D.itens ? playlistsComId() : todasPlaylists(), true);
     };
     c0.appendChild(botTudo);
     c.appendChild(c0);
