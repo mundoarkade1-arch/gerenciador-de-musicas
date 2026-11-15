@@ -3,7 +3,7 @@
   var EXT = ['mp3', 'm4a', 'flac', 'wav', 'ogg', 'wma', 'aac', 'opus', 'm4b', 'aif', 'aiff', 'ape', 'wv', 'mka'];
   var CH = window.CHARTS || { atualizado: null, listas: {}, historico: [] };
   var $ = function (id) { return document.getElementById(id); };
-  var estado = { arquivos: [], b: [], aba: 'repetidas', lista: null, soFalta: false, tinhaSalvo: false };
+  var estado = { arquivos: [], b: [], aba: 'repetidas', lista: null, soFalta: false, tinhaSalvo: false, n: 50, cache: {}, aviso: '' };
 
   function el(tag, txt, cls) {
     var e = document.createElement(tag);
@@ -214,6 +214,217 @@
     });
   }
 
+
+  // ---------- Google Drive: gerar arquivos JSON de playlists ----------
+
+  function nomeDoArquivo(c) { return c.slice(c.lastIndexOf('/') + 1); }
+  function pastaDoArquivo(c) { return c.slice(0, c.lastIndexOf('/')); }
+
+  // "Artista - Título.mp3" vira artista e título.
+  function lerNome(c) {
+    var nome = nomeDoArquivo(c);
+    var i = nome.lastIndexOf('.');
+    var sem = i < 0 ? nome : nome.slice(0, i);
+    var j = sem.indexOf(' - ');
+    if (j > 0) return { a: sem.slice(0, j).trim(), t: sem.slice(j + 3).trim() };
+    return { a: '', t: sem.trim() };
+  }
+
+  function faixaLocal(m) {
+    var n = lerNome(m.c);
+    return { fn: nomeDoArquivo(m.c), p: pastaDoArquivo(m.c), t: n.t, a: n.a };
+  }
+
+  function achar(f) {
+    var t = limpar(f.t, true);
+    if (!t) return null;
+    var a = limpar((f.a || '').split(/,|&| feat/)[0], true);
+    for (var i = 0; i < estado.arquivos.length; i++) {
+      var b = estado.arquivos[i].b;
+      if (b.indexOf(t) >= 0 && (!a || b.indexOf(a) >= 0)) return estado.arquivos[i];
+    }
+    return null;
+  }
+
+  function faixasDaLista(id, n) {
+    var chave = id + '|' + n;
+    if (estado.cache[chave]) return estado.cache[chave];
+    var vistos = {};
+    var out = [];
+    CH.listas[id].faixas.slice(0, n).forEach(function (f) {
+      var m = achar(f);
+      if (m && !vistos[m.c]) {
+        vistos[m.c] = true;
+        out.push({ fn: nomeDoArquivo(m.c), p: pastaDoArquivo(m.c), t: f.t, a: f.a });
+      }
+    });
+    estado.cache[chave] = out;
+    return out;
+  }
+
+  function playlistDaLista(id, n) {
+    var L = CH.listas[id];
+    return { nome: L.nome.replace(/^Top 200/, 'Top ' + n) + (/^Top 200/.test(L.nome) ? '' : ' (primeiras ' + n + ')'), origem: L.fonte, faixas: faixasDaLista(id, n) };
+  }
+
+  function nomeSeguro(t) {
+    return limpar(t, false).replace(/ /g, '-').slice(0, 40) || 'playlist';
+  }
+
+  function baixar(arquivo, playlists) {
+    playlists = playlists.filter(function (p) { return p.faixas.length > 0; });
+    if (!playlists.length) {
+      estado.aviso = 'Não achei nenhuma música para essa playlist na sua pasta.';
+      desenhar();
+      return;
+    }
+    var obj = { formato: 'toxic-playlists', v: 1, gerado: new Date().toISOString(), playlists: playlists };
+    var blob = new Blob([JSON.stringify(obj, null, 1)], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = arquivo;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 3000);
+    var total = playlists.reduce(function (s, p) { return s + p.faixas.length; }, 0);
+    estado.aviso = 'Pronto! Baixei ' + arquivo + ' com ' + playlists.length + ' playlist(s) e ' + total + ' músicas.';
+    desenhar();
+  }
+
+  function playlistPorCantor(texto) {
+    var toks = limpar(texto, true).split(' ').filter(function (x) { return x && x !== 'e' && x !== 'x' && x !== 'and'; });
+    if (!toks.length) return null;
+    var faixas = [];
+    estado.arquivos.forEach(function (m) {
+      var h = limpar(m.c, true);
+      if (toks.every(function (t) { return h.indexOf(t) >= 0; })) faixas.push(faixaLocal(m));
+    });
+    return { nome: texto.trim(), origem: 'Cantor', faixas: faixas };
+  }
+
+  function artistas() {
+    var mapa = {};
+    estado.arquivos.forEach(function (m) {
+      var n = lerNome(m.c);
+      if (!n.a) return;
+      var k = limpar(n.a, true);
+      if (!k) return;
+      if (!mapa[k]) mapa[k] = { nome: n.a, faixas: [] };
+      mapa[k].faixas.push(faixaLocal(m));
+    });
+    return Object.keys(mapa).map(function (k) { return mapa[k]; }).sort(function (x, y) { return y.faixas.length - x.faixas.length; });
+  }
+
+  function pastas() {
+    var mapa = {};
+    estado.arquivos.forEach(function (m) {
+      var p = pastaDoArquivo(m.c);
+      (mapa[p] = mapa[p] || []).push(faixaLocal(m));
+    });
+    return Object.keys(mapa).map(function (p) {
+      var nome = p.slice(p.lastIndexOf('/') + 1) || p;
+      return { nome: nome, origem: 'Pasta', faixas: mapa[p] };
+    });
+  }
+
+  function abaDrive(c) {
+    if (!estado.arquivos.length) {
+      c.appendChild(el('div', 'Primeiro escolha a pasta das suas músicas (botão roxo lá em cima). O arquivo JSON usa os nomes reais dos seus arquivos.', 'cartao'));
+      return;
+    }
+    if (estado.aviso) c.appendChild(el('div', estado.aviso, 'cartao'));
+
+    // 1) Playlists das listas top
+    var c1 = el('div', null, 'cartao');
+    c1.appendChild(el('h2', '1. Playlists das listas top'));
+    c1.appendChild(el('p', 'Cada lista vira uma playlist com as músicas que você já tem. Escolha o tamanho:', 'suave'));
+    var barraN = el('div', null, 'barra');
+    [50, 100, 200].forEach(function (n) {
+      var b = el('button', 'Top ' + n, 'leve' + (estado.n === n ? ' ativa' : ''));
+      b.onclick = function () { estado.n = n; estado.aviso = ''; desenhar(); };
+      barraN.appendChild(b);
+    });
+    c1.appendChild(barraN);
+    var ids = Object.keys(CH.listas);
+    if (!ids.length) c1.appendChild(el('p', 'Ainda não tem listas top. Rode a atualização no GitHub.', 'suave'));
+    ids.forEach(function (id) {
+      var L = CH.listas[id];
+      var tem = faixasDaLista(id, estado.n).length;
+      var total = Math.min(estado.n, L.faixas.length);
+      var l = el('div', null, 'linha');
+      var nome = el('div', playlistDaLista(id, estado.n).nome, 'nome');
+      nome.appendChild(el('small', 'Você tem ' + tem + ' de ' + total));
+      l.appendChild(nome);
+      var b = el('button', 'Baixar JSON', 'leve');
+      b.onclick = function () { baixar('playlist-' + nomeSeguro(L.nome) + '-' + estado.n + '.json', [playlistDaLista(id, estado.n)]); };
+      l.appendChild(b);
+      c1.appendChild(l);
+    });
+    if (ids.length) {
+      var todas = el('button', '⬇ Baixar JSON com TODAS as listas');
+      todas.style.marginTop = '12px';
+      todas.onclick = function () {
+        baixar('playlists-listas-top-' + estado.n + '.json', ids.map(function (id) { return playlistDaLista(id, estado.n); }));
+      };
+      c1.appendChild(todas);
+    }
+    c.appendChild(c1);
+
+    // 2) Por cantor
+    var c2 = el('div', null, 'cartao');
+    c2.appendChild(el('h2', '2. Playlist por cantor'));
+    c2.appendChild(el('p', 'Escreva o nome do cantor. Ele procura no nome do arquivo e no nome da pasta.', 'suave'));
+    var linha = el('div', null, 'barra');
+    var campo = document.createElement('input');
+    campo.type = 'text';
+    campo.placeholder = 'Nome do cantor';
+    campo.style.cssText = 'flex:1 1 220px;padding:12px;font-size:18px;border-radius:12px;border:1px solid var(--borda);background:var(--cartao);color:var(--texto);';
+    var gerar = el('button', 'Baixar JSON');
+    function gerarCantor() {
+      var p = playlistPorCantor(campo.value);
+      if (!p) { estado.aviso = 'Escreva o nome de um cantor.'; desenhar(); return; }
+      baixar('playlist-' + nomeSeguro(campo.value) + '.json', [p]);
+    }
+    gerar.onclick = gerarCantor;
+    campo.onkeydown = function (e) { if (e.key === 'Enter') gerarCantor(); };
+    linha.appendChild(campo);
+    linha.appendChild(gerar);
+    c2.appendChild(linha);
+
+    var arts = artistas();
+    if (arts.length) {
+      c2.appendChild(el('p', 'Cantores que você mais tem (pelo nome do arquivo "Cantor - Música"):', 'suave'));
+      var chips = el('div', null, 'barra');
+      arts.slice(0, 30).forEach(function (a) {
+        var b = el('button', a.nome + ' (' + a.faixas.length + ')', 'leve');
+        b.onclick = function () { baixar('playlist-' + nomeSeguro(a.nome) + '.json', [{ nome: a.nome, origem: 'Cantor', faixas: a.faixas }]); };
+        chips.appendChild(b);
+      });
+      c2.appendChild(chips);
+      var muitos = arts.filter(function (a) { return a.faixas.length >= 5; });
+      var botCada = el('button', '⬇ Uma playlist para cada cantor com 5 músicas ou mais (' + muitos.length + ')');
+      botCada.onclick = function () {
+        baixar('playlists-cantores.json', muitos.map(function (a) { return { nome: a.nome, origem: 'Cantor', faixas: a.faixas }; }));
+      };
+      if (muitos.length) c2.appendChild(botCada);
+    } else {
+      c2.appendChild(el('p', 'Os nomes dos seus arquivos não têm o formato "Cantor - Música", então não consegui listar os cantores. Você ainda pode digitar o nome do cantor acima.', 'suave'));
+    }
+    c.appendChild(c2);
+
+    // 3) Por pasta
+    var c3 = el('div', null, 'cartao');
+    c3.appendChild(el('h2', '3. Uma playlist para cada pasta'));
+    var ps = pastas();
+    c3.appendChild(el('p', 'Você tem ' + ps.length + ' pasta(s) com música. Cada pasta vira uma playlist.', 'suave'));
+    var botPastas = el('button', '⬇ Baixar JSON das pastas');
+    botPastas.onclick = function () { baixar('playlists-pastas.json', ps); };
+    c3.appendChild(botPastas);
+    c.appendChild(c3);
+  }
+
   function desenhar() {
     desenharNumeros();
     var c = $('conteudo');
@@ -223,8 +434,14 @@
     });
     if (estado.aba === 'repetidas') abaRepetidas(c);
     else if (estado.aba === 'top') abaTop(c);
+    else if (estado.aba === 'drive') abaDrive(c);
     else abaNovidades(c);
   }
+
+  var botaoDrive = document.createElement('button');
+  botaoDrive.setAttribute('data-aba', 'drive');
+  botaoDrive.textContent = 'Google Drive';
+  document.querySelector('.abas').appendChild(botaoDrive);
 
   document.querySelectorAll('.abas button').forEach(function (b) {
     b.onclick = function () { estado.aba = b.getAttribute('data-aba'); desenhar(); };
@@ -262,8 +479,10 @@
       var stats = { pastas: 0, ignorados: {}, pastasComProblema: [] };
       await varrer(pasta, pasta.name + '/', lista, stats);
       estado.arquivos = lista;
+      estado.cache = {};
       estado.b = lista.map(function (m) { return m.b; });
       salvar();
+      estado.aviso = '';
       $('mensagem').textContent = resumo(pasta.name, lista.length, stats);
       desenhar();
     } catch (e2) {
