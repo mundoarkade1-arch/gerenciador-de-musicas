@@ -6,61 +6,70 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' https://accounts.google.com/gsi/style; script-src 'self' https://accounts.google.com/gsi/client; connect-src https://www.googleapis.com https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; img-src data:;">
 <title>Gerenciador de Músicas</title>
 <link rel="stylesheet" href="style.css">
-<script src="ui.js"></script>
 </head>
 <body>
-<div class="fundo" aria-hidden="true"><span class="blob b1"></span><span class="blob b2"></span><span class="blob b3"></span></div>
 
-<!-- Faixa de progresso: aparece no topo quando algo demora -->
-<div id="faixa" class="faixa" role="status" aria-live="polite" hidden>
-  <div class="faixa-texto"><b id="faixaTitulo"></b><span id="faixaArquivo"></span></div>
-  <div id="faixaBarra" class="progresso"><i></i></div>
-  <small>Não feche esta página.</small>
-</div>
-<!-- Avisos grandes -->
-<div id="avisos" class="avisos" aria-live="polite"></div>
+<!-- FAIXA DE AVISO: aparece no topo, largura total, só quando há aviso (montada pelo ui.js) -->
+<div id="faixa" class="faixa" aria-live="polite" hidden></div>
 
 <div class="pagina">
+
+  <!-- 1. TOPO -->
   <header class="topo">
-    <div>
-      <h1>🎵 Gerenciador de Músicas</h1>
-      <p class="suave">Ele lê os nomes das suas músicas. Só envia arquivos para o seu Google Drive quando você pede. Nunca apaga de vez: as repetidas só vão para a lixeira do Drive, depois que você confirma.</p>
+    <div class="marca">
+      <span class="logo" data-ico="musica"></span>
+      <span class="marca-nome">Gerenciador de Músicas</span>
     </div>
-    <button id="botaoTema" class="redondo leve" type="button" aria-label="Trocar tema"></button>
+    <div class="topo-dir">
+      <span id="etqPasta" class="etq" hidden></span>
+      <span id="etqGoogle" class="etq" hidden></span>
+      <button id="botaoTema" class="redondo" type="button" aria-label="Trocar tema"></button>
+    </div>
   </header>
 
-  <section id="passos" class="passos" aria-label="Passo a passo">
-    <article class="passo cartao" data-estado="atual">
-      <div class="passo-topo"><span class="passo-n">1</span><span class="passo-estado">Agora</span></div>
-      <h2 data-dica="Lê os nomes das músicas da pasta que você escolher.|Só olha a pasta do seu PC. Não muda nada nela.|Sim. A pasta é aberta somente para leitura.">Escolha a pasta</h2>
-      <p class="suave">Onde estão as músicas no seu computador.</p>
-      <div class="passo-acao"><button id="botaoPasta" type="button">📁 Escolher pasta das músicas<small class="selo-botao">Só lê</small></button></div>
-    </article>
-    <article class="passo cartao" data-estado="pendente">
-      <div class="passo-topo"><span class="passo-n">2</span><span class="passo-estado">Depois</span></div>
-      <h2 data-dica="Liga o site à sua conta do Google para ele ver o seu Drive.|Só permite ler o Drive e mexer no que o próprio site criou.|Sim. O site nunca vê a sua senha.">Entre com o Google</h2>
-      <p class="suave">Para o site enxergar o seu Drive.</p>
-      <div class="passo-acao"><button id="botaoEntrar" type="button">Entrar com Google<small class="selo-botao">Só lê</small></button></div>
-    </article>
-    <article class="passo cartao principal-cartao" data-estado="pendente">
-      <div class="passo-topo"><span class="passo-n">3</span><span class="passo-estado">Depois</span></div>
-      <h2 data-dica="Faz tudo em ordem, de uma vez.|Pasta &quot;Músicas do Site&quot; no seu Drive e o arquivo de playlists.|Sim. Nada é apagado de vez: repetidas vão para a lixeira, e só depois de você confirmar.">Atualizar tudo</h2>
-      <p class="suave">Em ordem: 1) lê o Drive, 2) sobe o que falta, 3) manda repetidas para a lixeira (você confirma), 4) atualiza as playlists.</p>
-      <div class="passo-acao"><button id="botaoTudo" type="button" class="grande" disabled>🔄 Atualizar tudo<small class="selo-botao">Sobe arquivos · lixeira com confirmação</small></button></div>
-    </article>
+  <!-- 2. CARTÃO PRINCIPAL: o que fazer agora -->
+  <section id="hero" class="hero" data-passo="1" aria-label="O que fazer agora">
+    <div class="hero-esq">
+      <p id="heroEyebrow" class="eyebrow"></p>
+      <h1 id="heroTitulo" class="titulo"></h1>
+      <p id="heroTexto" class="hero-texto"></p>
+      <div class="hero-acoes">
+        <button id="botaoPrincipal" class="btn-v grande" type="button"></button>
+        <button id="botaoAntes" class="btn-s grande" type="button" hidden></button>
+      </div>
+      <p class="selo-linha"><span class="ico-verde" data-ico="escudo"></span><span id="heroSelo"></span></p>
+    </div>
+    <aside class="hero-dir" aria-label="O que vai acontecer">
+      <h2 class="eyebrow">O que vai acontecer</h2>
+      <ol id="plano" class="plano"></ol>
+    </aside>
   </section>
 
-  <div id="numeros" class="numeros"></div>
+  <!-- Resumo final de uma operação (fica até a próxima) -->
+  <section id="resumo" class="resumo" aria-label="Resumo" hidden></section>
 
+  <!-- 3. NÚMEROS -->
+  <div id="numeros" class="numeros" hidden></div>
+
+  <!-- 4. ABAS -->
   <nav class="abas" aria-label="Seções">
-    <button data-aba="repetidas" class="ativa">Repetidas</button>
-    <button data-aba="top">Top 200</button>
-    <button data-aba="novidades">Novidades</button>
+    <button type="button" data-aba="repetidas" aria-current="true">Repetidas</button>
+    <button type="button" data-aba="top">Top 200</button>
+    <button type="button" data-aba="novidades">Novidades</button>
+    <button type="button" data-aba="drive">Google Drive</button>
   </nav>
-  <p id="paraque" class="paraque suave"></p>
+  <p class="paraque"><span class="info-i" data-ico="info"></span><span id="paraque"></span></p>
 
+  <!-- 5. CONTEÚDO DA ABA -->
   <main id="conteudo"></main>
+
+  <footer class="rodape">
+    <button id="botaoHistorico" class="link" type="button">Ver últimos avisos</button>
+  </footer>
 </div>
+
+<noscript><p class="vazio">Este site precisa do JavaScript ligado no navegador.</p></noscript>
+<script src="ui.js"></script>
 <script src="data/charts.js"></script>
 <script src="youtube.js"></script>
 <script src="app.js"></script>

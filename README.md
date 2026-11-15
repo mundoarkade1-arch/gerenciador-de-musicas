@@ -2,11 +2,12 @@
 
 Programa simples que roda no navegador (Chrome ou Edge).
 
-- Acha músicas repetidas na sua pasta.
-- Mostra as listas top 200 e marca o que você já tem.
+- Lê a pasta de músicas do PC (só leitura) e acha as repetidas.
+- Mostra as listas top 200 (por gênero) e marca o que você já tem.
 - Mostra o que entrou e saiu de cada lista.
+- Com o login do Google: sobe o que falta para o Drive, manda repetidas para a lixeira do Drive (só com a sua confirmação) e atualiza o arquivo de playlists.
 
-Ele só lê os nomes dos arquivos. Não apaga, não muda e não envia nada.
+Nada é apagado de vez. Visual: preto, cinza e vermelho cereja, sem animações.
 
 As listas são atualizadas todo dia pelo GitHub (arquivo `.github/workflows/atualizar.yml`).
 Para mudar quais listas são buscadas, edite `scripts/atualizar.mjs`.

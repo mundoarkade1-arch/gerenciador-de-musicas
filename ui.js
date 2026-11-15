@@ -1,16 +1,10 @@
-/* ui.js — parte VISUAL do site (avisos, progresso, janela de confirmação, tema, passos).
-   Não mexe no Drive nem nas músicas. O app.js chama UI.msg(...) e UI.confirmar(...). */
+/* ui.js — parte VISUAL do site: faixa de aviso, cartão principal, janelas, tema.
+   Não mexe no Drive nem nas músicas. O app.js chama UI.msg(...), UI.confirmar(...) e UI.hero(...).
+   Sem animações: tudo muda na hora. O único movimento é a barra de progresso crescendo. */
 (function () {
   'use strict';
-  var $ = function (id) { return document.getElementById(id); };
   var NS = 'http://www.w3.org/2000/svg';
-  var reduzir = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-  // ---------- Tema (claro / escuro), lembrado neste navegador ----------
-  var tema = null;
-  try { tema = localStorage.getItem('gm_tema'); } catch (e) { /* sem problema */ }
-  if (tema !== 'claro' && tema !== 'escuro') tema = (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) ? 'escuro' : 'claro';
-  document.documentElement.setAttribute('data-tema', tema);
+  var $ = function (id) { return document.getElementById(id); };
 
   function el(tag, txt, cls) {
     var e = document.createElement(tag);
@@ -18,145 +12,293 @@
     if (cls) e.className = cls;
     return e;
   }
-  // Ícone SVG simples (traços), criado por JS por causa da CSP.
+  function esvaziar(n) { while (n.firstChild) n.removeChild(n.firstChild); }
+
+  // ---------- Ícones (SVG criado por JS, por causa da CSP) ----------
   var ICONES = {
-    ok: 'M5 12.5l4.5 4.5L19 7.5',
-    erro: 'M6.5 6.5l11 11M17.5 6.5l-11 11',
-    aviso: 'M12 7.5v6M12 17h.01',
-    info: 'M12 11v6M12 7.5h.01',
-    prog: 'M12 5v3M12 16v3M5 12h3M16 12h3',
-    sol: 'M12 4v2M12 18v2M4 12h2M18 12h2M6.3 6.3l1.4 1.4M16.3 16.3l1.4 1.4M17.7 6.3l-1.4 1.4M7.7 16.3l-1.4 1.4M12 9a3 3 0 100 6 3 3 0 000-6z',
-    lua: 'M20 14.5A8 8 0 019.5 4 8 8 0 1020 14.5z',
-    ajuda: 'M9.5 9.5a2.5 2.5 0 114 2c-.8.6-1.5 1-1.5 2M12 17h.01'
+    musica: ['M9 18V6l11-2v12', 'M9 18a3 3 0 11-6 0 3 3 0 016 0z', 'M20 16a3 3 0 11-6 0 3 3 0 016 0z'],
+    pasta: ['M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z'],
+    usuario: ['M12 12a4 4 0 100-8 4 4 0 000 8z', 'M4 20a8 8 0 0116 0'],
+    atualizar: ['M20 11a8 8 0 00-14.5-4.5L4 8', 'M4 4v4h4', 'M4 13a8 8 0 0014.5 4.5L20 16', 'M20 20v-4h-4'],
+    subir: ['M12 19V5', 'M6 11l6-6 6 6'],
+    lixeira: ['M4 7h16', 'M10 11v6', 'M14 11v6', 'M6 7l1 12a2 2 0 002 2h6a2 2 0 002-2l1-12', 'M9 7V4h6v3'],
+    documento: ['M14 3H6v18h12V7z', 'M14 3v4h4', 'M9 13h6', 'M9 17h4'],
+    check: ['M5 12.5l4.5 4.5L19 7.5'],
+    alerta: ['M12 6.5v7', 'M12 17.5h.01'],
+    escudo: ['M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z'],
+    seta: ['M5 12h14', 'M13 6l6 6-6 6'],
+    lua: ['M20 14.5A8 8 0 019.5 4 8 8 0 1020 14.5z'],
+    sol: ['M12 9a3 3 0 100 6 3 3 0 000-6z', 'M12 3v2', 'M12 19v2', 'M3 12h2', 'M19 12h2', 'M5.6 5.6L7 7', 'M17 17l1.4 1.4', 'M18.4 5.6L17 7', 'M7 17l-1.4 1.4'],
+    info: ['M12 11v6', 'M12 7.5h.01']
   };
   function icone(nome) {
     var s = document.createElementNS(NS, 'svg');
     s.setAttribute('viewBox', '0 0 24 24');
     s.setAttribute('class', 'ico');
     s.setAttribute('aria-hidden', 'true');
-    var p = document.createElementNS(NS, 'path');
-    p.setAttribute('d', ICONES[nome] || ICONES.info);
-    s.appendChild(p);
+    (ICONES[nome] || ICONES.info).forEach(function (d) {
+      var p = document.createElementNS(NS, 'path');
+      p.setAttribute('d', d);
+      s.appendChild(p);
+    });
     return s;
   }
 
-  var UI = { ultima: '', quieto: false, acaoEntrar: null };
+  var UI = { ultima: '', quieto: false, acaoEntrar: null, aoMudar: null, hist: [], icone: icone };
+  // Estado do que está acontecendo agora (para a faixa e para o cartão principal).
+  function novoAndamento() { return { ativo: false, etapa: -1, titulo: '', arquivo: '', pct: null, confirmando: false }; }
+  UI.andamento = novoAndamento();
+  function mudou() { if (UI.aoMudar) UI.aoMudar(); }
 
-  // ---------- Que tipo de mensagem é? (para escolher cor e ícone) ----------
+  // ---------- Tema (escuro é o padrão; claro é opcional) ----------
+  var tema = 'escuro';
+  try { if (localStorage.getItem('gm_tema2') === 'claro') tema = 'claro'; } catch (e) { /* sem problema */ }
+  document.documentElement.setAttribute('data-tema', tema);
+
+  // ---------- Que tipo de mensagem é? ----------
+  var ERRO_INICIO = /^(Deu erro|Parou|O login|Não consegui|A escolha|Você não deixou|O Google)/;
+  var ERRO_MEIO = /(Deu erro|Parou depois|O Google respondeu)/;
   function tipoDe(t) {
-    if (/^(Deu erro|Parou|O login|Não consegui|A escolha|Você não deixou|O Google|Para ler a pasta)/.test(t)) return 'erro';
+    if (ERRO_INICIO.test(t) || ERRO_MEIO.test(t)) return 'erro';
     if (/^(Subindo|Mandando para a lixeira|Lendo|Enviando|Atualizando|Preparando)/.test(t)) return 'prog';
-    if (/^(Não|Clique|Escolha|Escreva)/.test(t)) return 'aviso';
+    if (/^(Para ler a pasta|Não|Clique|Escolha|Escreva)/.test(t)) return 'aviso';
     if (/^(Pronto|Subi|Mandei|Conectado)/.test(t)) return 'ok';
     return 'info';
   }
-  var TITULOS = { ok: 'Tudo certo!', erro: 'Algo não deu certo', aviso: 'Atenção', info: 'Aviso', prog: 'Trabalhando...' };
   UI.tipoDe = tipoDe;
 
-  // ---------- Faixa de progresso (fica no topo, sempre visível) ----------
-  function progresso(t) {
-    var f = $('faixa');
-    if (!f) return;
-    var m = /(\d+) de (\d+)/.exec(t);
-    var arq = /: (.*?) \(não feche/.exec(t);
-    $('faixaTitulo').textContent = m ? t.slice(0, t.indexOf(m[0]) + m[0].length) : t.replace(/\s*\(não feche.*$/, '');
-    $('faixaArquivo').textContent = arq ? arq[1] : '';
-    var b = $('faixaBarra');
-    if (m) { b.classList.remove('indet'); b.firstChild.style.width = Math.round(100 * m[1] / m[2]) + '%'; }
-    else { b.classList.add('indet'); b.firstChild.style.width = '40%'; }
-    f.hidden = false;
+  function etapaDe(t) {
+    if (/^Lendo o seu Drive/.test(t)) return 0;
+    if (/^(Preparando a pasta|Subindo)/.test(t)) return 1;
+    if (/^Mandando para a lixeira/.test(t)) return 2;
+    if (/^Enviando para o YouTube/.test(t)) return 'yt';
+    if (/^Enviando/.test(t)) return 3;
+    if (/^Lendo as músicas/.test(t)) return 'pasta';
+    return null; // "Atualizando tudo..." não muda a etapa
   }
-  function fimProgresso() { var f = $('faixa'); if (f) f.hidden = true; }
 
-  // ---------- Avisos (toasts) ----------
-  function toast(tipo, titulo, texto, acao) {
-    var area = $('avisos');
-    if (!area) return;
-    var t = el('div', null, 'toast t-' + tipo);
-    t.setAttribute('role', tipo === 'erro' ? 'alert' : 'status');
-    t.appendChild(icone(tipo));
-    var corpo = el('div', null, 'toast-corpo');
-    corpo.appendChild(el('b', titulo));
-    corpo.appendChild(el('span', texto));
+  // ---------- A FAIXA de aviso ----------
+  var faixa = $('faixa');
+  var atual = null;     // { tipo, refs } da faixa que está na tela
+  var tempo = null;
+
+  function limparFaixa() {
+    clearTimeout(tempo);
+    atual = null;
+    esvaziar(faixa);
+    faixa.hidden = true;
+    faixa.removeAttribute('data-tipo');
+  }
+  UI.fecharFaixa = limparFaixa;
+
+  var ICONE_TIPO = { erro: 'alerta', ok: 'check', aviso: 'alerta', info: 'info' };
+  var ICONE_ETAPA = { 0: 'documento', 1: 'subir', 2: 'lixeira', 3: 'atualizar', pasta: 'pasta', yt: 'subir' };
+
+  // Faixa de progresso: atualiza no mesmo lugar (não recria a cada arquivo).
+  function faixaProgresso(a) {
+    var icone_ = ICONE_ETAPA[a.etapa] || 'atualizar';
+    if (!atual || atual.tipo !== 'prog') {
+      limparFaixa();
+      faixa.hidden = false;
+      faixa.setAttribute('data-tipo', 'prog');
+      faixa.setAttribute('role', 'status');
+      var linha = el('div', null, 'f-linha');
+      var circ = el('span', null, 'f-circ');
+      var corpo = el('div', null, 'f-corpo');
+      var t = el('b', null, 'f-t');
+      var d = el('span', null, 'f-d');
+      corpo.appendChild(t); corpo.appendChild(d);
+      var dir = el('div', null, 'f-dir');
+      dir.appendChild(el('span', 'Não feche esta página', 'f-nao'));
+      linha.appendChild(circ); linha.appendChild(corpo); linha.appendChild(dir);
+      var barra = el('div', null, 'f-barra');
+      barra.setAttribute('role', 'progressbar');
+      barra.setAttribute('aria-valuemin', '0');
+      barra.setAttribute('aria-valuemax', '100');
+      var i = document.createElement('i');
+      barra.appendChild(i);
+      faixa.appendChild(linha); faixa.appendChild(barra);
+      atual = { tipo: 'prog', refs: { circ: circ, t: t, d: d, barra: barra, i: i, ico: null } };
+    }
+    var r = atual.refs;
+    if (r.ico !== icone_) {
+      esvaziar(r.circ);
+      r.circ.appendChild(icone(icone_));
+      r.ico = icone_;
+    }
+    r.t.textContent = a.titulo;
+    r.d.textContent = a.arquivo;
+    r.d.hidden = !a.arquivo;
+    if (a.pct == null) {
+      r.barra.hidden = true;
+    } else {
+      r.barra.hidden = false;
+      r.i.style.width = a.pct + '%';
+      r.barra.setAttribute('aria-valuenow', String(a.pct));
+    }
+  }
+
+  // Faixa de erro, sucesso, atenção ou informação.
+  function faixaAviso(tipo, titulo, detalhe, acao) {
+    limparFaixa();
+    faixa.hidden = false;
+    faixa.setAttribute('data-tipo', tipo);
+    faixa.setAttribute('role', tipo === 'erro' ? 'alert' : 'status');
+    var linha = el('div', null, 'f-linha');
+    var circ = el('span', null, 'f-circ');
+    circ.appendChild(icone(ICONE_TIPO[tipo] || 'info'));
+    var corpo = el('div', null, 'f-corpo');
+    corpo.appendChild(el('b', titulo, 'f-t'));
+    if (detalhe) corpo.appendChild(el('span', detalhe, 'f-d'));
+    var acoes = el('div', null, 'f-acoes');
     if (acao) {
-      var b = el('button', acao.rotulo, 'leve pequeno');
-      b.onclick = function () { fechar(); acao.fazer(); };
-      corpo.appendChild(b);
+      var b = el('button', acao.rotulo, 'f-acao');
+      b.type = 'button';
+      b.onclick = function () { limparFaixa(); acao.fazer(); };
+      acoes.appendChild(b);
     }
-    t.appendChild(corpo);
-    var x = el('button', '×', 'fechar');
-    x.setAttribute('aria-label', 'Fechar aviso');
-    function fechar() {
-      t.classList.add('saindo');
-      setTimeout(function () { t.remove(); }, reduzir ? 0 : 250);
-    }
-    x.onclick = fechar;
-    t.appendChild(x);
-    area.appendChild(t);
-    if (tipo !== 'erro' && tipo !== 'aviso') setTimeout(fechar, 8000); // erros e atenção ficam até fechar
+    var x = el('button', 'Fechar', 'f-fechar');
+    x.type = 'button';
+    x.onclick = limparFaixa;
+    acoes.appendChild(x);
+    linha.appendChild(circ); linha.appendChild(corpo); linha.appendChild(acoes);
+    faixa.appendChild(linha);
+    atual = { tipo: tipo };
+    // Erro e atenção ficam até fechar. O resto some em 15 segundos.
+    if (tipo !== 'erro' && tipo !== 'aviso') tempo = setTimeout(limparFaixa, 15000);
   }
-  UI.toast = toast;
 
-  // Porta de entrada única: o app.js manda o texto, aqui decidimos como mostrar.
+  // Quebra um texto em frases curtas.
+  function frases(texto) {
+    return texto.split(/(?<=[.!])\s+(?=[A-ZÁÉÍÓÚÂÊÔÃÕÇ])/).map(function (f) { return f.replace(/^Pronto!\s*/, '').trim(); }).filter(Boolean);
+  }
+
+  // ---------- Entrada única: o app.js manda o texto, aqui decidimos como mostrar ----------
   UI.msg = function (texto) {
     UI.ultima = texto || '';
     if (!texto) return;
     var tipo = tipoDe(texto);
-    if (tipo === 'prog') { progresso(texto); return; }
-    fimProgresso();
-    if (UI.quieto && tipo !== 'erro') return; // "Atualizar tudo" mostra só o resumo final
-    var acao = null;
-    if (/login.*(venceu|cancelado|não deu certo)/.test(texto) && UI.acaoEntrar) acao = { rotulo: 'Entrar de novo', fazer: UI.acaoEntrar };
-    var curto = texto.length > 260 ? texto.slice(0, 257) + '...' : texto;
-    toast(tipo, TITULOS[tipo], curto, acao);
+
+    if (tipo === 'prog') {
+      var a = UI.andamento;
+      a.ativo = true;
+      var e = etapaDe(texto);
+      if (e !== null) a.etapa = e;
+      var m = /(\d+) de (\d+)/.exec(texto);
+      var arq = /^[^:]*: (.*) \(não feche/.exec(texto);
+      var pedacos = texto.replace(/\s*\(não feche esta página\)\.?/, '').split('...');
+      if (m) {
+        a.titulo = texto.slice(0, texto.indexOf(m[0]) + m[0].length);
+        a.pct = Math.round(100 * Number(m[1]) / Number(m[2]));
+      } else {
+        a.titulo = pedacos[0].trim();
+        a.pct = null;
+      }
+      a.arquivo = arq ? arq[1] : (m ? '' : (pedacos[1] || '').trim());
+      UI.limparResumo();
+      faixaProgresso(a);
+      mudou();
+      return;
+    }
+
+    // Terminou a operação (ou é uma mensagem solta).
+    if (!UI.quieto || tipo === 'erro') UI.andamento = novoAndamento(); // um erro sempre encerra o que estava rodando
+    if (UI.quieto && tipo !== 'erro') { mudou(); return; } // "Atualizar tudo" mostra só o resumo final
+
+    var titulo, detalhe, acao = null;
+    var partes = frases(texto);
+    var haResumo = partes.length > 1 && /^(Subi|Mandei|Pronto! (Achei|O arquivo))/.test(texto); // só operações do Drive
+    if (tipo === 'erro') {
+      var ie = texto.search(ERRO_MEIO);
+      var t2 = ie > 0 ? texto.slice(ie) : texto;
+      if (/login.*(venceu|cancelado|bloqueado|não deu certo)/i.test(t2)) {
+        t2 = t2.replace(/^Deu erro[^:]*:\s*/, '');
+        titulo = /venceu/.test(t2) ? 'O login do Google venceu' : 'Não consegui entrar no Google';
+        detalhe = /venceu/.test(t2)
+          ? t2.replace(/O login do Google venceu\.\s*/, '').replace(/Clique em "Entrar com Google" de novo\./, 'Entre de novo para continuar.').trim()
+          : t2;
+        if (UI.acaoEntrar) acao = { rotulo: 'Entrar de novo', fazer: UI.acaoEntrar };
+      } else {
+        titulo = 'Algo não deu certo';
+        detalhe = t2;
+      }
+    } else if (tipo === 'ok') {
+      titulo = 'Tudo certo!';
+      detalhe = haResumo ? 'Veja o resumo logo abaixo.' : texto;
+    } else if (tipo === 'aviso') {
+      titulo = 'Atenção';
+      detalhe = texto;
+    } else {
+      titulo = 'Aviso';
+      detalhe = texto;
+    }
+    faixaAviso(tipo, titulo, detalhe, acao);
+    UI.hist.unshift({ d: new Date(), tipo: tipo, texto: texto });
+    if (UI.hist.length > 20) UI.hist.length = 20;
+
+    // Resumo grande no meio da tela, depois de uma operação que deu certo (ou deu certo em parte).
+    if (haResumo && (tipo === 'ok' || tipo === 'erro')) UI.resumo(partes);
+    mudou();
   };
 
-  // Cartão colorido de resumo (no lugar de parágrafos soltos).
-  UI.resumo = function (texto) {
-    var tipo = tipoDe(texto);
-    var c = el('div', null, 'resumo t-' + (tipo === 'prog' ? 'info' : tipo));
-    c.appendChild(icone(tipo === 'prog' ? 'info' : tipo));
+  // ---------- Resumo final (fica até a próxima operação) ----------
+  UI.resumo = function (lista) {
+    var r = $('resumo');
+    esvaziar(r);
+    r.appendChild(el('h2', 'O que aconteceu', 'eyebrow'));
     var ul = el('ul');
-    texto.split(/(?<=[.!])\s+(?=[A-ZÁÉÍÓÚÂÊÔÃÕÇ])/).forEach(function (frase) { ul.appendChild(el('li', frase)); });
-    c.appendChild(ul);
-    return c;
+    lista.forEach(function (f) {
+      var erro = ERRO_MEIO.test(f) || ERRO_INICIO.test(f);
+      var li = el('li', null, erro ? 'erro' : '');
+      li.appendChild(icone(erro ? 'alerta' : 'check'));
+      li.appendChild(el('span', f));
+      ul.appendChild(li);
+    });
+    r.appendChild(ul);
+    var b = el('button', 'Ver últimos avisos', 'link resumo-rodape');
+    b.type = 'button';
+    b.onclick = UI.historico;
+    r.appendChild(b);
+    r.hidden = false;
   };
+  UI.limparResumo = function () { var r = $('resumo'); esvaziar(r); r.hidden = true; };
 
-  // ---------- Janela de confirmação da lixeira ----------
-  UI.confirmar = function (dados) {
+  // ---------- Janela (foco preso, Esc, clique explícito) ----------
+  // opc: { titulo, intro, corpo (nó), aviso, botoes: [{rotulo, vermelho, valor}], esc }
+  function janela(opc) {
     return new Promise(function (resolve) {
       var antes = document.activeElement;
       var fundo = el('div', null, 'modal-fundo');
-      var m = el('div', null, 'modal cartao');
+      var m = el('div', null, 'janela');
       m.setAttribute('role', 'dialog');
       m.setAttribute('aria-modal', 'true');
-      m.setAttribute('aria-labelledby', 'modalTitulo');
-      var h = el('h2', 'Mandar ' + dados.total + ' cópia(s) para a lixeira?');
-      h.id = 'modalTitulo';
+      m.setAttribute('aria-labelledby', 'janelaTitulo');
+      var h = el('h2', opc.titulo);
+      h.id = 'janelaTitulo';
       m.appendChild(h);
-      m.appendChild(el('p', 'Em cada grupo, fica a cópia maior. Nada é apagado de vez: você pode recuperar pela lixeira do Drive por 30 dias.', 'suave'));
-      var lista = el('div', null, 'rolagem modal-lista');
-      dados.itens.slice(0, 60).forEach(function (g) {
-        var l = el('div', null, 'grupo');
-        var a = el('div', null, 'item'); a.appendChild(el('span', 'Fica', 'selo tenho')); a.appendChild(document.createTextNode(' ' + g.fica));
-        l.appendChild(a);
-        g.vai.forEach(function (v) {
-          var b = el('div', null, 'item'); b.appendChild(el('span', 'Lixeira', 'selo falta')); b.appendChild(document.createTextNode(' ' + v));
-          l.appendChild(b);
-        });
-        lista.appendChild(l);
+      if (opc.intro) m.appendChild(el('p', opc.intro, 'janela-intro'));
+      if (opc.corpo) m.appendChild(opc.corpo);
+      if (opc.aviso) {
+        var av = el('p', null, 'janela-aviso');
+        var ic = el('span', null, 'ico-verde');
+        ic.appendChild(icone('escudo'));
+        av.appendChild(ic);
+        av.appendChild(el('span', opc.aviso));
+        m.appendChild(av);
+      }
+      var barra = el('div', null, 'janela-botoes');
+      var botoes = opc.botoes.map(function (b) {
+        var x = el('button', b.rotulo, b.vermelho ? 'btn-v' : 'btn-s');
+        x.type = 'button';
+        x.onclick = function () { fim(b.valor); };
+        barra.appendChild(x);
+        return x;
       });
-      m.appendChild(lista);
-      if (dados.itens.length > 60) m.appendChild(el('p', 'Mostrando só os 60 primeiros grupos de ' + dados.itens.length + '.', 'suave'));
-      var barra = el('div', null, 'barra modal-botoes');
-      var nao = el('button', 'Cancelar', 'leve');
-      var sim = el('button', 'Mandar para a lixeira');
-      barra.appendChild(nao); barra.appendChild(sim);
       m.appendChild(barra);
       fundo.appendChild(m);
       document.body.appendChild(fundo);
       document.body.classList.add('travado');
-      nao.focus();
+      botoes[0].focus();
       function fim(r) {
         document.removeEventListener('keydown', tecla, true);
         fundo.remove();
@@ -165,8 +307,8 @@
         resolve(r);
       }
       function tecla(e) {
-        if (e.key === 'Escape') { e.preventDefault(); fim(false); }
-        if (e.key === 'Tab') { // foco preso dentro do modal
+        if (e.key === 'Escape') { e.preventDefault(); fim(opc.esc); }
+        if (e.key === 'Tab') { // foco preso dentro da janela
           var f = m.querySelectorAll('button');
           var primeiro = f[0], ultimo = f[f.length - 1];
           if (e.shiftKey && document.activeElement === primeiro) { e.preventDefault(); ultimo.focus(); }
@@ -174,96 +316,205 @@
         }
       }
       document.addEventListener('keydown', tecla, true);
-      nao.onclick = function () { fim(false); };
-      sim.onclick = function () { fim(true); };
     });
-  };
+  }
 
-  // ---------- Números que contam de 0 até o valor ----------
-  UI.contar = function (raiz) {
-    raiz.querySelectorAll('[data-alvo]').forEach(function (b) {
-      var alvo = Number(b.getAttribute('data-alvo'));
-      if (reduzir || !alvo) { b.textContent = alvo.toLocaleString('pt-BR'); return; }
-      var ini = performance.now();
-      (function passo(agora) {
-        var p = Math.min(1, (agora - ini) / 700);
-        b.textContent = Math.round(alvo * (1 - Math.pow(1 - p, 3))).toLocaleString('pt-BR');
-        if (p < 1) requestAnimationFrame(passo);
-      })(ini);
+  function tamanho(t) { return (t / 1048576).toFixed(1).replace('.', ',') + ' MB'; }
+
+  // Confirmação da lixeira. dados = { total, itens: [{ fica, tam, vai: [caminhos] }] }
+  UI.confirmar = async function (dados) {
+    UI.andamento.confirmando = true;
+    mudou();
+    var lista = el('div', null, 'janela-lista');
+    dados.itens.slice(0, 300).forEach(function (g) {
+      var a = el('div', null, 'lj fica');
+      a.appendChild(el('span', 'Fica', 'pilula ok'));
+      a.appendChild(el('span', g.fica + (g.tam ? ' · ' + tamanho(g.tam) : ''), 'cam'));
+      lista.appendChild(a);
+      g.vai.forEach(function (v) {
+        var b = el('div', null, 'lj');
+        b.appendChild(el('span', 'Lixeira', 'pilula verm'));
+        b.appendChild(el('span', v, 'cam'));
+        lista.appendChild(b);
+      });
     });
-  };
-
-  // ---------- Os 3 passos do topo ----------
-  UI.passos = function (pasta, google, tudo) {
-    var feito = [pasta, google, tudo];
-    var atual = feito.indexOf(false);
-    document.querySelectorAll('#passos .passo').forEach(function (p, i) {
-      p.setAttribute('data-estado', feito[i] ? 'feito' : (i === atual ? 'atual' : 'pendente'));
-      var s = p.querySelector('.passo-estado');
-      if (s) s.textContent = feito[i] ? '✔ Feito' : (i === atual ? 'Agora' : 'Depois');
+    var intro = 'Em cada grupo, fica a cópia maior. Confira antes de confirmar.' + (dados.itens.length > 300 ? ' Mostrando só os 300 primeiros grupos de ' + dados.itens.length + '.' : '');
+    var r = await janela({
+      titulo: 'Mandar ' + dados.total + (dados.total === 1 ? ' cópia' : ' cópias') + ' para a lixeira?',
+      intro: intro,
+      corpo: lista,
+      aviso: 'Nada é apagado de vez. Dá para recuperar pela lixeira do Drive por 30 dias.',
+      botoes: [{ rotulo: 'Cancelar', valor: false }, { rotulo: 'Mandar para a lixeira', vermelho: true, valor: true }],
+      esc: false
     });
+    UI.andamento.confirmando = false;
+    mudou();
+    return r;
   };
 
-  var PARA_QUE = {
-    repetidas: 'Para que serve: mostra músicas com o mesmo nome na sua pasta do PC, para você saber o que está repetido.',
-    top: 'Para que serve: compara as músicas mais tocadas do momento (Deezer) com as suas e mostra o que falta.',
-    novidades: 'Para que serve: mostra o que entrou e o que saiu das listas desde a última atualização.',
-    drive: 'Para que serve: liga ao Google Drive, sobe o que falta, limpa repetidas e gera as playlists para o app do celular.'
+  // Últimos 20 avisos.
+  UI.historico = function () {
+    var ol = el('ol', null, 'hist janela-lista');
+    if (!UI.hist.length) ol.appendChild(el('li', 'Ainda não teve nenhum aviso.'));
+    UI.hist.forEach(function (h) {
+      var li = el('li');
+      li.appendChild(el('time', h.d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })));
+      var rot = { erro: 'Erro', ok: 'Pronto', aviso: 'Atenção', info: 'Aviso' }[h.tipo];
+      li.appendChild(el('span', rot, 'pilula ' + (h.tipo === 'erro' ? 'verm' : h.tipo === 'ok' ? 'ok' : h.tipo === 'aviso' ? 'am' : '')));
+      li.appendChild(el('span', h.texto));
+      ol.appendChild(li);
+    });
+    return janela({ titulo: 'Últimos avisos', corpo: ol, botoes: [{ rotulo: 'Fechar', valor: true }], esc: true });
   };
-  UI.paraQue = function (aba) { var p = $('paraque'); if (p) p.textContent = PARA_QUE[aba] || ''; };
 
-  // ---------- Selo de segurança dentro de um botão ----------
-  UI.selo = function (botao, texto) { botao.appendChild(el('small', texto, 'selo-botao')); return botao; };
-
-  // ---------- Dica "?" (O que faz / Mexe em quê / É seguro?) ----------
-  UI.dica = function (texto) {
-    var partes = texto.split('|');
-    var rot = ['O que isso faz: ', 'Mexe em quê: ', 'É seguro? '];
-    var b = el('button', null, 'dica');
-    b.type = 'button';
-    b.setAttribute('aria-label', 'Explicação');
-    b.setAttribute('aria-expanded', 'false');
-    b.appendChild(icone('ajuda'));
-    var pop = el('div', null, 'dica-caixa');
-    pop.setAttribute('role', 'tooltip');
-    pop.hidden = true;
-    partes.forEach(function (p, i) { var l = el('p'); l.appendChild(el('b', rot[i] || '')); l.appendChild(document.createTextNode(p)); pop.appendChild(l); });
-    var caixa = el('span', null, 'dica-area');
-    caixa.appendChild(b); caixa.appendChild(pop);
-    b.onclick = function (e) {
-      e.stopPropagation();
-      var abrir = pop.hidden;
-      document.querySelectorAll('.dica-caixa').forEach(function (x) { x.hidden = true; });
-      pop.hidden = !abrir;
-      b.setAttribute('aria-expanded', String(abrir));
-    };
-    return caixa;
+  // ---------- Cartão principal ("hero") ----------
+  var TEXTOS = {
+    1: { eb: 'Passo 1 de 3', t: 'Escolha a pasta.', p: 'Onde estão as músicas no seu computador.', b: 'Escolher pasta das músicas', s: 'Só lê. Não muda nada na pasta.' },
+    2: { eb: 'Passo 2 de 3', t: 'Entre com o Google.', p: 'Para o site enxergar o seu Drive. Ele nunca vê a sua senha.', b: 'Entrar com Google', s: 'Só lê o seu Drive.' },
+    3: { eb: 'Passo 3 de 3 · tudo pronto', t: 'Atualizar tudo.', p: 'Um clique faz os 4 passos ao lado, em ordem.', b: 'Atualizar tudo', s: 'Nada é apagado de vez. A lixeira só com a sua confirmação.' }
   };
-  document.addEventListener('click', function () { document.querySelectorAll('.dica-caixa').forEach(function (x) { x.hidden = true; }); });
-  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') document.querySelectorAll('.dica-caixa').forEach(function (x) { x.hidden = true; }); });
+  // Os 4 passos do painel da direita.
+  var LINHAS = [
+    { ico: 'documento', tag: 'Só lê', cls: 'ok', depois: 'Depois' },
+    { ico: 'subir', tag: 'Sobe arquivos', cls: '', depois: 'Depois' },
+    { ico: 'lixeira', tag: 'Lixeira', cls: 'verm', depois: 'Depois' },
+    { ico: 'atualizar', tag: 'Drive', cls: '', depois: 'Depois' }
+  ];
+  var refs = [];
+  function montarPlano() {
+    var ol = $('plano');
+    LINHAS.forEach(function (L) {
+      var li = el('li', null, 'linha-plano');
+      var circ = el('span', null, 'circ');
+      var corpo = el('div', null, 'plano-corpo');
+      var t = el('b', null, 'plano-t');
+      var d = el('span', null, 'plano-d');
+      var barra = el('div', null, 'barra-mini');
+      var i = document.createElement('i');
+      barra.appendChild(i);
+      barra.hidden = true;
+      corpo.appendChild(t); corpo.appendChild(d); corpo.appendChild(barra);
+      var tag = el('span', null, 'pilula');
+      li.appendChild(circ); li.appendChild(corpo); li.appendChild(tag);
+      ol.appendChild(li);
+      refs.push({ li: li, circ: circ, t: t, d: d, barra: barra, i: i, tag: tag, ico: '' });
+    });
+  }
 
-  // ---------- Quando a página termina de carregar ----------
-  document.addEventListener('DOMContentLoaded', function () {
-    document.querySelectorAll('[data-dica]').forEach(function (n) { n.appendChild(UI.dica(n.getAttribute('data-dica'))); });
-    var bt = $('botaoTema');
-    function pintar() {
-      while (bt.firstChild) bt.removeChild(bt.firstChild);
-      bt.appendChild(icone(tema === 'escuro' ? 'sol' : 'lua'));
-      bt.setAttribute('aria-label', tema === 'escuro' ? 'Trocar para o tema claro' : 'Trocar para o tema escuro');
+  function plural(n, um, varios) { return n + ' ' + (n === 1 ? um : varios); }
+
+  // d = { pasta, google, pastaNome, ocupado, tudo, nSubir, nLixo, nDrive, podePasta, antes }
+  UI.hero = function (d) {
+    var a = UI.andamento;
+    var rodando = !!(a.ativo || a.confirmando || d.ocupado || d.tudo);
+    var passo = !d.pasta ? 1 : (!d.google ? 2 : 3);
+    var lendoPasta = rodando && a.etapa === 'pasta';
+    var noYt = rodando && a.etapa === 'yt';
+    var T = TEXTOS[lendoPasta ? 1 : (rodando ? 3 : passo)];
+    var hero = $('hero');
+    hero.setAttribute('data-passo', rodando ? (lendoPasta ? '1' : 'andamento') : String(passo));
+
+    // Etiquetas do topo: só aparecem quando o passo foi feito.
+    function etiqueta(id, forte, resto, vale) {
+      var e = $(id);
+      e.hidden = !vale;
+      if (!vale || e.getAttribute('data-v') === resto) return;
+      esvaziar(e);
+      e.appendChild(icone('check'));
+      e.appendChild(el('b', forte));
+      e.appendChild(el('span', resto));
+      e.setAttribute('data-v', resto);
     }
-    pintar();
-    bt.onclick = function () {
-      tema = tema === 'escuro' ? 'claro' : 'escuro';
-      document.documentElement.setAttribute('data-tema', tema);
-      try { localStorage.setItem('gm_tema', tema); } catch (e) { /* sem problema */ }
-      pintar();
-    };
-    // Efeito de "brilho" que segue o mouse nos botões
-    document.addEventListener('pointermove', function (e) {
-      var b = e.target.closest && e.target.closest('button');
-      if (b) { var r = b.getBoundingClientRect(); b.style.setProperty('--mx', (e.clientX - r.left) + 'px'); }
-    });
-  });
+    etiqueta('etqPasta', 'Pasta', d.pastaNome || '', d.pasta);
+    etiqueta('etqGoogle', 'Google', 'conectado', d.google);
+
+    // Lado esquerdo
+    if (rodando) {
+      $('heroEyebrow').textContent = lendoPasta ? 'Passo 1 de 3 · em andamento' : (noYt ? 'Playlist do YouTube · em andamento' : 'Passo 3 de 3 · em andamento');
+      $('heroTitulo').textContent = lendoPasta ? 'Lendo a pasta…' : (noYt ? 'Enviando…' : 'Atualizando…');
+      $('heroTexto').textContent = 'Pode deixar esta aba aberta. Eu aviso quando terminar.';
+    } else {
+      $('heroEyebrow').textContent = T.eb;
+      $('heroTitulo').textContent = T.t;
+      $('heroTexto').textContent = T.p;
+    }
+    $('heroSelo').textContent = T.s;
+    var b = $('botaoPrincipal');
+    esvaziar(b);
+    if (rodando) {
+      b.appendChild(el('span', 'Não feche esta página'));
+      b.disabled = true;
+    } else {
+      b.appendChild(el('span', T.b));
+      if (passo === 3) b.appendChild(icone('seta'));
+      b.disabled = passo === 1 && !d.podePasta;
+    }
+    var antes = $('botaoAntes');
+    antes.hidden = !(passo === 1 && !rodando && d.antes);
+    if (!antes.hidden) antes.textContent = 'Usar a pasta de antes (' + d.antes.nome + ')';
+
+    // Lado direito: o plano
+    $('plano').className = 'plano' + (!rodando && passo < 3 ? ' apagado' : '');
+    var idx = rodando ? (noYt ? null : lendoPasta ? -2 : (a.confirmando ? 2 : (typeof a.etapa === 'number' ? a.etapa : -1))) : null;
+    var ndr = d.nDrive;
+    for (var i = 0; i < 4; i++) {
+      var R = refs[i], L = LINHAS[i];
+      var est = idx === null ? 'parado' : (idx === -2 ? 'depois' : (i < idx ? 'feito' : (i === idx ? 'agora' : 'depois')));
+      R.li.setAttribute('data-estado', est);
+      var tit, det, tag = L.tag, cls = L.cls, ico = L.ico, pct = null;
+      if (i === 0) {
+        tit = 'Ler o Drive'; det = 'Vê o que já está na pasta “Músicas do Site”';
+        if (est === 'feito') { tit = 'Drive lido'; det = ndr != null ? plural(ndr, 'música encontrada', 'músicas encontradas') : ''; }
+        if (est === 'agora') { tit = 'Lendo o Drive'; det = a.arquivo || 'Pode demorar um pouco'; }
+      } else if (i === 1) {
+        tit = d.nSubir == null ? 'Subir as músicas que faltam' : (d.nSubir === 0 ? 'Nada para subir' : 'Subir ' + plural(d.nSubir, 'música', 'músicas'));
+        det = 'As que ainda faltam, só uma cópia de cada';
+        if (est === 'feito') { tit = 'Músicas enviadas'; det = 'Pasta “Músicas do Site” em dia'; }
+        if (est === 'agora') { tit = a.titulo || 'Subindo'; det = a.arquivo; pct = a.pct; }
+      } else if (i === 2) {
+        tit = d.nLixo == null ? 'Limpar as repetidas' : (d.nLixo === 0 ? 'Nenhuma repetida para limpar' : 'Limpar ' + plural(d.nLixo, 'repetida', 'repetidas'));
+        det = est === 'depois' ? 'Pede a sua confirmação' : 'Fica a maior; você confirma antes';
+        if (est === 'feito') { tit = 'Repetidas limpas'; det = 'Foram para a lixeira do Drive'; }
+        if (est === 'agora') {
+          if (a.confirmando) { tit = 'Esperando você confirmar'; det = 'Confira a janela na tela'; }
+          else { tit = a.titulo || 'Mandando para a lixeira'; det = a.arquivo; pct = a.pct; }
+        }
+      } else {
+        tit = 'Atualizar as playlists'; det = 'Arquivo para o app do celular';
+        if (est === 'feito') { tit = 'Playlists atualizadas'; det = 'No seu Drive'; }
+        if (est === 'agora') { tit = 'Enviando as playlists'; det = 'Para o seu Drive'; }
+      }
+      if (est === 'feito') { tag = 'Feito'; cls = 'ok'; ico = 'check'; }
+      else if (est === 'agora') { tag = 'Agora'; cls = ''; }
+      else if (est === 'depois') { tag = L.depois; }
+      R.t.textContent = tit;
+      R.d.textContent = det || '';
+      R.d.hidden = !det;
+      R.tag.textContent = tag;
+      R.tag.className = 'pilula' + (cls ? ' ' + cls : '');
+      if (R.ico !== ico) { esvaziar(R.circ); R.circ.appendChild(icone(ico)); R.ico = ico; }
+      R.barra.hidden = pct == null;
+      if (pct != null) R.i.style.width = pct + '%';
+    }
+  };
+
+  // ---------- Quando o script carrega ----------
+  document.querySelectorAll('[data-ico]').forEach(function (n) { n.appendChild(icone(n.getAttribute('data-ico'))); });
+  montarPlano();
+  var bt = $('botaoTema');
+  function pintarTema() {
+    esvaziar(bt);
+    bt.appendChild(icone(tema === 'escuro' ? 'lua' : 'sol'));
+    bt.setAttribute('aria-label', tema === 'escuro' ? 'Trocar para o tema claro' : 'Trocar para o tema escuro');
+  }
+  pintarTema();
+  bt.onclick = function () {
+    tema = tema === 'escuro' ? 'claro' : 'escuro';
+    document.documentElement.setAttribute('data-tema', tema);
+    try { localStorage.setItem('gm_tema2', tema); } catch (e) { /* sem problema */ }
+    pintarTema();
+  };
+  $('botaoHistorico').onclick = UI.historico;
 
   window.UI = UI;
 })();

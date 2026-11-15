@@ -6,9 +6,9 @@
   var PASTA_RAIZ = 'Músicas do Site';
   var CH = window.CHARTS || { atualizado: null, listas: {}, historico: [] };
   var $ = function (id) { return document.getElementById(id); };
-  var estado = { arquivos: [], b: [], aba: 'repetidas', lista: null, soFalta: false, soFaltaYt: false, tinhaSalvo: false, n: 50, cache: {}, aviso: '' };
+  var estado = { arquivos: [], b: [], aba: 'repetidas', lista: null, soFalta: false, soFaltaYt: false, tinhaSalvo: false, n: 50, cache: {}, aviso: '', pastaNome: '', lim: { repetidas: 50, top: 50, novidades: 50 }, abertos: {}, antes: null, ocupDesenhado: false };
   var D = { token: null, itens: null, ocupado: false };
-  // D.msg agora manda o texto para o sistema de avisos (ui.js) e devolve o último texto.
+  // D.msg manda o texto para a faixa de aviso (ui.js) e devolve o último texto.
   Object.defineProperty(D, 'msg', { get: function () { return UI.ultima || ''; }, set: function (v) { UI.msg(v); } });
 
   function el(tag, txt, cls) {
@@ -122,25 +122,69 @@
     return false;
   }
 
-  function numero(valor, rotulo) {
+  // ---------- Peças de tela (sem animação) ----------
+
+  var PAGINA = 50; // quantas linhas aparecem por vez (botão "Mostrar mais")
+
+  function pilula(txt, cls) { return el('span', txt, 'pilula' + (cls ? ' ' + cls : '')); }
+  function vazio(txt) { return el('div', txt, 'vazio'); }
+  function tamanhoTxt(t) { return (t / 1048576).toFixed(1).replace('.', ',') + ' MB'; }
+  function nomeSemExt(c) { var n = nomeDoArquivo(c); var i = n.lastIndexOf('.'); return i < 0 ? n : n.slice(0, i); }
+  // Pasta sem o nome da pasta raiz (que é igual para todas): "Funk/Hits 2023".
+  function pastaCurta(c) { var p = pastaDoArquivo(c); var i = p.indexOf('/'); return i < 0 ? p : p.slice(i + 1); }
+
+  // Uma linha de lista: nome + apoio à esquerda, pílulas à direita.
+  function itemLista(nome, sub, pilulas, pos) {
+    var l = el('div', null, 'item-lista');
+    var esq = el('div', null, 'item-esq');
+    if (pos != null) esq.appendChild(el('span', String(pos), 'pos'));
+    var t = el('div', null, 'item-txt');
+    t.appendChild(el('div', nome, 'item-nome'));
+    if (sub) t.appendChild(el('div', sub, 'item-sub'));
+    esq.appendChild(t);
+    l.appendChild(esq);
+    var dir = el('div', null, 'item-dir');
+    pilulas.forEach(function (p) { dir.appendChild(p); });
+    l.appendChild(dir);
+    return l;
+  }
+
+  // Rodapé "Mostrar mais N" (no máximo PAGINA linhas por vez).
+  function rodapeMais(caixa, chave, total) {
+    var vistas = estado.lim[chave];
+    if (total <= vistas) return;
+    var b = el('button', 'Mostrar mais ' + Math.min(PAGINA, total - vistas), 'mais');
+    b.type = 'button';
+    b.onclick = function () {
+      estado.lim[chave] += PAGINA;
+      desenhar(true);
+      var nb = document.querySelector('.mais');
+      if (nb) nb.focus();
+    };
+    caixa.appendChild(b);
+  }
+
+  function numero(valor, rotulo, vermelho) {
     var d = el('div', null, 'numero');
-    var b = el('b', String(valor));
-    if (typeof valor === 'number') b.setAttribute('data-alvo', String(valor));
-    d.appendChild(b);
-    d.appendChild(document.createTextNode(rotulo));
+    d.appendChild(el('b', String(valor), 'num' + (vermelho ? ' vermelho' : '')));
+    d.appendChild(el('span', rotulo));
     return d;
   }
 
-  function desenharNumeros() {
+  // Os 4 números em uma faixa só. Só aparecem quando há dados.
+  function desenharNumeros(faltam) {
     var n = $('numeros');
     esvaziar(n);
-    n.appendChild(numero(estado.b.length, 'músicas na pasta'));
-    var g = grupos();
-    n.appendChild(numero(g.lista.length, 'grupos repetidos'));
-    n.appendChild(numero(g.sobra, 'cópias a mais'));
-    n.appendChild(numero(CH.atualizado ? new Date(CH.atualizado).toLocaleDateString('pt-BR') : '—', 'listas atualizadas'));
-    UI.contar(n);
+    if (!estado.b.length) { n.hidden = true; return; }
+    n.hidden = false;
+    var g = estado.arquivos.length ? grupos() : null;
+    var data = CH.atualizado ? new Date(CH.atualizado).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '—';
+    n.appendChild(numero(estado.b.length.toLocaleString('pt-BR'), 'músicas na pasta'));
+    n.appendChild(numero(g ? g.sobra.toLocaleString('pt-BR') : '—', 'repetidas', !!(g && g.sobra)));
+    n.appendChild(numero(faltam == null ? '—' : faltam.toLocaleString('pt-BR'), 'faltam subir'));
+    n.appendChild(numero(data, 'listas atualizadas'));
   }
+
 
   function grupos() {
     var mapa = {};
@@ -155,97 +199,94 @@
   }
 
   function abaRepetidas(c) {
-    if (!estado.arquivos.length) {
-      c.appendChild(el('div', 'Escolha a pasta das suas músicas para ver as repetidas.', 'cartao'));
-      return;
-    }
+    if (!estado.arquivos.length) { c.appendChild(vazio('Escolha a pasta das suas músicas para ver as repetidas.')); return; }
     var g = grupos();
-    if (!g.lista.length) {
-      c.appendChild(el('div', 'Não achei nenhuma música repetida. 🎉', 'cartao'));
-      return;
-    }
-    c.appendChild(el('p', 'Em laranja: mesmo nome e mesmo tamanho. Quase certo que é o mesmo arquivo.', 'suave'));
-    g.lista.forEach(function (k) {
+    if (!g.lista.length) { c.appendChild(vazio('Não achei nenhuma música repetida.')); return; }
+    var caixa = el('div', null, 'lista');
+    g.lista.slice(0, estado.lim.repetidas).forEach(function (k) {
       var arr = g.mapa[k];
-      var caixa = el('div', null, 'grupo');
-      caixa.appendChild(el('h3', k + '  (' + arr.length + ' arquivos)'));
-      var tam = {};
-      arr.forEach(function (m) { tam[m.t] = (tam[m.t] || 0) + 1; });
-      arr.forEach(function (m) {
-        var igual = tam[m.t] > 1;
-        caixa.appendChild(el('div', m.c + '  —  ' + (m.t / 1048576).toFixed(2) + ' MB' + (igual ? '  — mesmo tamanho' : ''), 'item' + (igual ? ' forte' : '')));
-      });
-      c.appendChild(caixa);
+      var maior = arr.reduce(function (a, b) { return b.t > a.t ? b : a; }, arr[0]);
+      var vistas = {};
+      var pastasTxt = [];
+      arr.forEach(function (m) { var p = pastaCurta(m.c); if (!vistas[p]) { vistas[p] = 1; pastasTxt.push(p); } });
+      caixa.appendChild(itemLista(nomeSemExt(maior.c), pastasTxt.join('  ·  '), [pilula(arr.length + ' cópias', 'verm'), pilula(tamanhoTxt(maior.t), 'tam')]));
     });
+    rodapeMais(caixa, 'repetidas', g.lista.length);
+    c.appendChild(caixa);
   }
 
   function abaTop(c) {
     var ids = Object.keys(CH.listas);
-    if (!ids.length) {
-      c.appendChild(el('div', 'Ainda não tem listas. Elas aparecem depois da primeira atualização no GitHub.', 'cartao'));
-      return;
-    }
+    if (!ids.length) { c.appendChild(vazio('Ainda não tem listas. Elas aparecem depois da primeira atualização no GitHub.')); return; }
     if (!estado.lista || !CH.listas[estado.lista]) estado.lista = ids[0];
     // Uma fileira de botões por gênero; embaixo ficam as listas daquele gênero.
     var grupoDe = function (id) { return CH.listas[id].grupo || 'Outras'; };
-    var grupos = [];
-    ids.forEach(function (id) { if (grupos.indexOf(grupoDe(id)) < 0) grupos.push(grupoDe(id)); });
+    var gens = [];
+    ids.forEach(function (id) { if (gens.indexOf(grupoDe(id)) < 0) gens.push(grupoDe(id)); });
     var gAtual = grupoDe(estado.lista);
-    if (grupos.length > 1) {
-      var barraG = el('div', null, 'barra');
-      grupos.forEach(function (g) {
-        var bg = el('button', g, 'leve' + (g === gAtual ? ' ativa' : ''));
-        bg.onclick = function () { estado.lista = ids.filter(function (id) { return grupoDe(id) === g; })[0]; desenhar(); };
+    if (gens.length > 1) {
+      var barraG = el('div', null, 'barra-chips');
+      gens.forEach(function (g) {
+        var bg = el('button', g, 'chip' + (g === gAtual ? ' ativa' : ''));
+        bg.type = 'button';
+        bg.setAttribute('aria-pressed', g === gAtual ? 'true' : 'false');
+        bg.onclick = function () { estado.lista = ids.filter(function (id) { return grupoDe(id) === g; })[0]; estado.lim.top = PAGINA; desenhar(true); };
         barraG.appendChild(bg);
       });
       c.appendChild(barraG);
     }
-    var barra = el('div', null, 'barra');
+    var chips = el('div', null, 'barra-chips');
     ids.forEach(function (id) {
       if (grupoDe(id) !== gAtual) return;
-      var b = el('button', CH.listas[id].nome, 'leve' + (id === estado.lista ? ' ativa' : ''));
-      b.onclick = function () { estado.lista = id; desenhar(); };
-      barra.appendChild(b);
+      var b = el('button', CH.listas[id].nome, 'chip' + (id === estado.lista ? ' ativa' : ''));
+      b.type = 'button';
+      b.setAttribute('aria-pressed', id === estado.lista ? 'true' : 'false');
+      b.onclick = function () { estado.lista = id; estado.lim.top = PAGINA; desenhar(true); };
+      chips.appendChild(b);
     });
-    c.appendChild(barra);
+    c.appendChild(chips);
 
     var L = CH.listas[estado.lista];
     var marcadas = L.faixas.map(function (f) { return { f: f, tem: estado.b.length ? tenho(f) : null }; });
     var temN = marcadas.filter(function (m) { return m.tem; }).length;
     var faltam = marcadas.filter(function (m) { return m.tem === false; });
+    c.appendChild(el('p', 'Fonte: ' + L.fonte + '.' + (estado.b.length ? ' Você já tem ' + temN + ' de ' + L.faixas.length + '.' : ' Escolha a pasta para ver o que você já tem.'), 'nota'));
 
-    c.appendChild(el('p', 'Fonte: ' + L.fonte + '.' + (estado.b.length ? ' Você já tem ' + temN + ' de ' + L.faixas.length + '.' : ' Escolha a pasta para ver o que você já tem.'), 'suave'));
-
-    var acoes = el('div', null, 'barra');
-    var filtro = el('button', estado.soFalta ? 'Mostrar todas' : 'Mostrar só o que falta', 'leve');
-    filtro.onclick = function () { estado.soFalta = !estado.soFalta; desenhar(); };
-    var copiar = el('button', '📋 Copiar o que falta');
-    copiar.onclick = function () {
-      var txt = faltam.map(function (m) { return m.f.a + ' - ' + m.f.t; }).join('\n');
-      navigator.clipboard.writeText(txt).then(function () { copiar.textContent = 'Copiado! ✔'; }, function () { copiar.textContent = 'Não consegui copiar'; });
-    };
+    var acoes = el('div', null, 'barra-chips');
+    var filtro = el('button', estado.soFalta ? 'Mostrar todas' : 'Mostrar só o que falta', 'chip');
+    filtro.type = 'button';
+    filtro.onclick = function () { estado.soFalta = !estado.soFalta; estado.lim.top = PAGINA; desenhar(true); };
     acoes.appendChild(filtro);
-    if (faltam.length) acoes.appendChild(copiar);
+    if (faltam.length) {
+      var copiar = el('button', 'Copiar o que falta', 'btn-s');
+      copiar.type = 'button';
+      copiar.onclick = function () {
+        var txt = faltam.map(function (m) { return m.f.a + ' - ' + m.f.t; }).join('\n');
+        navigator.clipboard.writeText(txt).then(function () { copiar.textContent = 'Copiado!'; }, function () { copiar.textContent = 'Não consegui copiar'; });
+      };
+      acoes.appendChild(copiar);
+    }
     c.appendChild(acoes);
+
     var ytl = YT.lista(estado.lista);
     cartaoYoutube(c, estado.lista, L, ytl);
 
-    var caixa = el('div', null, 'cartao rolagem');
+    var linhas = [];
     marcadas.forEach(function (m, i) {
       if (estado.soFalta && m.tem !== false) return;
       if (estado.soFaltaYt && ytl.playlistId && (ytl.feitas[m.f.id] || ytl.manual[m.f.id])) return;
-      var l = el('div', null, 'linha');
-      l.appendChild(el('span', String(i + 1), 'pos'));
-      var nome = el('div', m.f.t, 'nome');
-      nome.appendChild(el('small', m.f.a));
-      l.appendChild(nome);
-      if (m.tem !== null) l.appendChild(el('span', m.tem ? 'já tenho' : 'falta', 'selo ' + (m.tem ? 'tenho' : 'falta')));
-      if (ytl.playlistId) {
-        var noYt = !!(ytl.feitas[m.f.id] || ytl.manual[m.f.id]);
-        l.appendChild(el('span', noYt ? 'no YouTube' : (ytl.sem[m.f.id] ? 'sem resultado' : 'falta no YouTube'), 'selo ' + (noYt ? 'tenho' : 'falta')));
-      }
-      caixa.appendChild(l);
+      linhas.push({ m: m, pos: i + 1 });
     });
+    var caixa = el('div', null, 'lista');
+    linhas.slice(0, estado.lim.top).forEach(function (x) {
+      var pil = x.m.tem === null ? [] : [pilula(x.m.tem ? 'já tenho' : 'falta', x.m.tem ? 'ok' : 'am')];
+      if (ytl.playlistId) {
+        var noYt = !!(ytl.feitas[x.m.f.id] || ytl.manual[x.m.f.id]);
+        pil.push(pilula(noYt ? 'no YouTube' : (ytl.sem[x.m.f.id] ? 'sem resultado' : 'falta no YouTube'), noYt ? 'ok' : 'am'));
+      }
+      caixa.appendChild(itemLista(x.m.f.t, x.m.f.a, pil, x.pos));
+    });
+    rodapeMais(caixa, 'top', linhas.length);
     c.appendChild(caixa);
   }
 
@@ -255,55 +296,62 @@
     var q = YT.quantas(id, L.faixas);
     var feitas = L.faixas.filter(function (f) { return ytl.feitas[f.id] || ytl.manual[f.id]; }).length;
     var sem = L.faixas.filter(function (f) { return ytl.sem[f.id]; }).length;
-    var cx = el('div', null, 'cartao');
-    cx.appendChild(el('h2', '▶ Playlist no YouTube'));
+    var cx = el('section', null, 'yt');
+    cx.appendChild(el('h2', 'Playlist no YouTube', 'eyebrow'));
     var txt = ytl.playlistId
       ? 'Já estão na playlist: ' + feitas + ' de ' + L.faixas.length + '.' + (sem ? ' Sem resultado na busca: ' + sem + '.' : '') + ' Faltam: ' + (L.faixas.length - feitas - sem) + '.'
       : 'A playlist ainda não foi criada. Ela é criada como privada, só você vê.';
-    cx.appendChild(el('p', txt, 'suave'));
+    cx.appendChild(el('p', txt, 'yt-texto'));
     if (sem) {
       var fora = [];
       L.faixas.forEach(function (f, i) { if (ytl.sem[f.id]) fora.push((i + 1) + '. ' + f.a + ' - ' + f.t); });
-      var caixaSem = el('div', null, 'resumo t-aviso');
+      var caixaSem = el('div', null, 'yt-sem');
       caixaSem.appendChild(el('p', 'Não consegui colocar ' + sem + ' música(s) na playlist (não achei no YouTube):'));
       var ulSem = el('ul');
-      ulSem.style.margin = '6px 0 12px';
-      ulSem.style.paddingLeft = '20px';
       fora.forEach(function (t) { ulSem.appendChild(el('li', t)); });
       caixaSem.appendChild(ulSem);
-      var bCop = el('button', '📋 Copiar essa lista', 'leve');
+      var barraSem = el('div', null, 'barra-chips');
+      var bCop = el('button', 'Copiar essa lista', 'btn-s');
+      bCop.type = 'button';
       bCop.onclick = function () {
-        navigator.clipboard.writeText(fora.join('\n')).then(function () { bCop.textContent = 'Copiado! ✔'; }, function () { bCop.textContent = 'Não consegui copiar'; });
+        navigator.clipboard.writeText(fora.join('\n')).then(function () { bCop.textContent = 'Copiado!'; }, function () { bCop.textContent = 'Não consegui copiar'; });
       };
-      caixaSem.appendChild(bCop);
-      var bMan = el('button', '✋ Já adicionei na mão (' + sem + ')', 'leve');
-      bMan.onclick = function () { YT.marcarManual(id); desenhar(); };
-      caixaSem.appendChild(bMan);
+      barraSem.appendChild(bCop);
+      var bMan = el('button', 'Já adicionei na mão (' + sem + ')', 'btn-s');
+      bMan.type = 'button';
+      bMan.onclick = function () { YT.marcarManual(id); desenhar(true); };
+      barraSem.appendChild(bMan);
+      caixaSem.appendChild(barraSem);
       cx.appendChild(caixaSem);
     }
-    cx.appendChild(el('p', 'Cota grátis de hoje: usei ' + YT.usado() + ' de ' + YT.COTA + '. Hoje ainda cabem cerca de ' + q.lote.length + ' músicas. O que não couber continua amanhã, de onde parou.', 'suave'));
-    var bar = el('div', null, 'barra');
+    cx.appendChild(el('p', 'Cota grátis de hoje: usei ' + YT.usado() + ' de ' + YT.COTA + '. Hoje ainda cabem cerca de ' + q.lote.length + ' músicas. O que não couber continua amanhã, de onde parou.', 'nota'));
+    var bar = el('div', null, 'barra-chips');
     if (!YT.token) {
-      var bE = el('button', 'Entrar com YouTube');
+      var bE = el('button', 'Entrar com YouTube', 'btn-v');
+      bE.type = 'button';
       bE.onclick = ytEntrar;
       bar.appendChild(bE);
     } else {
-      var bV = el('button', q.lote.length ? '▶ Enviar as próximas ' + q.lote.length + ' músicas' : (q.pendentes ? 'A cota de hoje acabou. Volte amanhã' : '✔ Playlist completa'));
+      var bV = el('button', q.lote.length ? 'Enviar as próximas ' + q.lote.length + ' músicas' : (q.pendentes ? 'A cota de hoje acabou. Volte amanhã' : 'Playlist completa'), 'btn-v');
+      bV.type = 'button';
       bV.disabled = YT.ocupado || !q.lote.length;
       bV.onclick = function () { ytEnviar(id, L); };
       bar.appendChild(bV);
     }
     if (ytl.playlistId) {
-      var bA = el('button', 'Abrir no YouTube', 'leve');
+      var bA = el('button', 'Abrir no YouTube', 'btn-s');
+      bA.type = 'button';
       bA.onclick = function () { window.open('https://www.youtube.com/playlist?list=' + encodeURIComponent(ytl.playlistId), '_blank', 'noopener'); };
       bar.appendChild(bA);
-      var bF = el('button', estado.soFaltaYt ? 'Mostrar todas' : 'Mostrar só o que falta no YouTube', 'leve');
-      bF.onclick = function () { estado.soFaltaYt = !estado.soFaltaYt; desenhar(); };
+      var bF = el('button', estado.soFaltaYt ? 'Mostrar todas' : 'Mostrar só o que falta no YouTube', 'btn-s');
+      bF.type = 'button';
+      bF.onclick = function () { estado.soFaltaYt = !estado.soFaltaYt; estado.lim.top = PAGINA; desenhar(true); };
       bar.appendChild(bF);
     }
     if (sem) {
-      var bS = el('button', 'Tentar de novo as ' + sem + ' sem resultado', 'leve');
-      bS.onclick = function () { YT.liberarSem(id); desenhar(); };
+      var bS = el('button', 'Tentar de novo as ' + sem + ' sem resultado', 'btn-s');
+      bS.type = 'button';
+      bS.onclick = function () { YT.liberarSem(id); desenhar(true); };
       bar.appendChild(bS);
     }
     cx.appendChild(bar);
@@ -324,11 +372,11 @@
           } else {
             D.msg = 'Não consegui entrar no YouTube' + (r && r.error ? ' (' + r.error + ')' : '') + '. Tente de novo.';
           }
-          desenhar();
+          desenhar(true);
         },
         error_callback: function (e) {
           D.msg = 'Não consegui entrar no YouTube' + (e && e.type ? ' (' + e.type + ')' : '') + '. Tente de novo.';
-          desenhar();
+          desenhar(true);
         }
       });
       cliente.requestAccessToken({ prompt: '' });
@@ -343,7 +391,7 @@
     var p = YT.enviar(id, L.nome, L.faixas, function (i, total, f) {
       D.msg = 'Enviando para o YouTube ' + i + ' de ' + total + ': ' + f.a + ' - ' + f.t + ' (não feche esta página)';
     });
-    desenhar();
+    desenhar(true);
     try {
       var r = await p;
       var ytl = YT.lista(id);
@@ -356,38 +404,28 @@
     } catch (e) {
       D.msg = e.message;
     }
-    desenhar();
-  }
-
-  function listaFaixas(c, titulo, faixas, mostrarTenho) {
-    if (!faixas || !faixas.length) return;
-    c.appendChild(el('h2', titulo));
-    faixas.forEach(function (f) {
-      var l = el('div', null, 'linha');
-      var nome = el('div', f.t, 'nome');
-      nome.appendChild(el('small', f.a));
-      l.appendChild(nome);
-      if (mostrarTenho && estado.b.length) {
-        var t = tenho(f);
-        l.appendChild(el('span', t ? 'já tenho' : 'falta', 'selo ' + (t ? 'tenho' : 'falta')));
-      }
-      c.appendChild(l);
-    });
+    desenhar(true);
   }
 
   function abaNovidades(c) {
-    if (!CH.historico.length) {
-      c.appendChild(el('div', 'Ainda sem novidades. Elas aparecem quando uma lista mudar entre duas atualizações.', 'cartao'));
-      return;
-    }
+    if (!CH.historico.length) { c.appendChild(vazio('Ainda sem novidades. Elas aparecem quando uma lista mudar entre duas atualizações.')); return; }
+    var itens = [];
     CH.historico.slice(0, 40).forEach(function (h) {
-      var caixa = el('div', null, 'cartao');
-      caixa.appendChild(el('h2', new Date(h.d + 'T12:00:00').toLocaleDateString('pt-BR') + ' — ' + h.nome));
-      listaFaixas(caixa, 'Entraram agora', h.entraram, true);
-      listaFaixas(caixa, 'Saíram da lista', h.sairam, false);
-      c.appendChild(caixa);
+      itens.push({ cab: new Date(h.d + 'T12:00:00').toLocaleDateString('pt-BR') + ' · ' + h.nome });
+      (h.entraram || []).forEach(function (f) { itens.push({ f: f, entrou: true }); });
+      (h.sairam || []).forEach(function (f) { itens.push({ f: f, entrou: false }); });
     });
+    var caixa = el('div', null, 'lista');
+    itens.slice(0, estado.lim.novidades).forEach(function (x) {
+      if (x.cab) { caixa.appendChild(el('div', x.cab, 'cab-lista')); return; }
+      var pil = [pilula(x.entrou ? 'entrou' : 'saiu', x.entrou ? 'ok' : '')];
+      if (x.entrou && estado.b.length) { var t = tenho(x.f); pil.push(pilula(t ? 'já tenho' : 'falta', t ? 'ok' : 'am')); }
+      caixa.appendChild(itemLista(x.f.t, x.f.a, pil));
+    });
+    rodapeMais(caixa, 'novidades', itens.length);
+    c.appendChild(caixa);
   }
+
 
 
   // ---------- Google Drive: gerar arquivos JSON de playlists ----------
@@ -504,7 +542,7 @@
     return limpar(t, false).replace(/ /g, '-').slice(0, 40) || 'playlist';
   }
 
-  // Aviso que aparece embaixo da tela, sempre visível, e some sozinho.
+  // Aviso grande na faixa do topo (ui.js).
   function aviso(msg) { UI.msg(msg); }
 
   function baixar(arquivo, playlists, manterVazias) {
@@ -603,7 +641,7 @@
         callback: function (r) {
           if (r && r.access_token) {
             D.token = r.access_token;
-            D.msg = 'Conectado ao Google Drive. Agora clique em "Ler músicas do Drive".';
+            D.msg = 'Conectado ao Google. Agora clique em "Atualizar tudo".';
           } else {
             D.msg = 'O login não deu certo' + (r && r.error ? ' (' + r.error + ')' : '') + '. Tente de novo.';
           }
@@ -820,14 +858,6 @@
     return falhas === 0;
   }
 
-  function listaSimples(c, titulo, linhas) {
-    c.appendChild(el('h3', titulo + ' (' + linhas.length + ')'));
-    if (!linhas.length) { c.appendChild(el('p', 'Nenhuma. 🎉', 'suave')); return; }
-    var caixa = el('div', null, 'rolagem');
-    linhas.slice(0, 200).forEach(function (t) { caixa.appendChild(el('div', t, 'item')); });
-    c.appendChild(caixa);
-    if (linhas.length > 200) c.appendChild(el('p', 'Mostrando só as 200 primeiras.', 'suave'));
-  }
 
   // ---------- Google Drive: repetidas (só manda para a LIXEIRA, nunca apaga de vez) ----------
 
@@ -861,7 +891,7 @@
     var plano = planoLixeira();
     var total = plano.reduce(function (s, g) { return s + g.lixo.length; }, 0);
     if (!total) { aviso('Não tem repetidas na pasta "' + PASTA_RAIZ + '" para limpar.'); return true; }
-    if (!(await UI.confirmar({ total: total, itens: plano.map(function (g) { return { fica: g.manter.p + '/' + g.manter.fn, vai: g.lixo.map(function (d) { return d.p + '/' + d.fn; }) }; }) }))) return 'cancelado';
+    if (!(await UI.confirmar({ total: total, itens: plano.map(function (g) { return { fica: g.manter.p + '/' + g.manter.fn, tam: g.manter.t, vai: g.lixo.map(function (d) { return d.p + '/' + d.fn; }) }; }) }))) return 'cancelado';
     D.ocupado = true;
     var certas = 0;
     var falhas = 0;
@@ -896,7 +926,7 @@
       await enviarParaDrive();
       D.msg = texto + ' ' + D.msg;
     } else if (certas > 0 && !quieto) {
-      D.msg = texto + ' Para atualizar o arquivo de playlists, escolha a pasta das músicas (botão lá em cima) e clique em "Colocar playlists no Drive".';
+      D.msg = texto + ' Para atualizar o arquivo de playlists, escolha a pasta das músicas e clique em "Atualizar tudo".';
     } else {
       D.msg = texto;
     }
@@ -937,187 +967,246 @@
     }
   }
 
+  // ---------- Aba "Google Drive" (organizada na ordem do que a pessoa faz) ----------
+
+  // Linha recolhível (fechada no começo), com contador à direita.
+  function recolhivel(chave, titulo, contador, preencher) {
+    var d = document.createElement('details');
+    d.className = 'rec';
+    if (estado.abertos[chave]) d.open = true;
+    d.addEventListener('toggle', function () { estado.abertos[chave] = d.open; });
+    var s = document.createElement('summary');
+    s.appendChild(el('span', titulo));
+    var dir = el('span', null, 'dir');
+    dir.appendChild(pilula(String(contador), contador ? 'verm' : ''));
+    s.appendChild(dir);
+    d.appendChild(s);
+    var corpo = el('div', null, 'rec-corpo');
+    preencher(corpo);
+    d.appendChild(corpo);
+    return d;
+  }
+
+  function linhasSimples(corpo, linhas, max) {
+    if (!linhas.length) { corpo.appendChild(el('div', 'Nenhuma.', 'linha-simples mu')); return; }
+    linhas.slice(0, max).forEach(function (t) { corpo.appendChild(el('div', t, 'linha-simples')); });
+    if (linhas.length > max) corpo.appendChild(el('div', 'Mostrando só as ' + max + ' primeiras.', 'linha-simples mu'));
+  }
+
   function linhaDrive(d) {
-    var l = el('div', null, 'item');
-    l.appendChild(el('span', (d.site ? '[pasta do site] ' : '[fora do site] ') + (d.p ? d.p + '/' : '') + d.fn + ' (' + (d.t / 1048576).toFixed(1) + ' MB)  '));
+    var l = el('div', null, 'linha-simples');
+    l.appendChild(document.createTextNode((d.site ? '[pasta do site] ' : '[fora do site] ') + (d.p ? d.p + '/' : '') + d.fn + ' (' + (d.t / 1048576).toFixed(1) + ' MB)  '));
     var a = el('a', 'abrir no Drive');
     a.href = 'https://drive.google.com/file/d/' + encodeURIComponent(d.id) + '/view';
     a.target = '_blank';
     a.rel = 'noopener noreferrer';
-    a.style.cssText = 'color:var(--cor);font-weight:600;';
     l.appendChild(a);
     return l;
   }
 
-  function cartaoNuvem(c) {
-    var n = el('div', null, 'cartao');
-    var h2n = el('h2', '☁ Ligar ao Google Drive');
-    h2n.appendChild(UI.dica('Mostra o que está no seu Drive e deixa você subir o que falta.|Só a pasta "' + PASTA_RAIZ + '" do seu Drive.|Sim. Nada é apagado de vez e a lixeira pede a sua confirmação.'));
-    n.appendChild(h2n);
-    n.appendChild(el('p', 'O site lê os nomes dos seus áudios no Drive. Só envia arquivos quando você clica em um botão de subir. Nunca apaga de vez: as repetidas da pasta "' + PASTA_RAIZ + '" só vão para a lixeira do Drive, depois que você confirma.', 'suave'));
-    var barra = el('div', null, 'barra');
-    var bEntrar = el('button', D.token ? 'Entrar de novo' : 'Entrar com Google', D.token ? 'leve' : '');
-    bEntrar.onclick = entrar;
-    UI.selo(bEntrar, 'Só lê');
-    barra.appendChild(bEntrar);
-    if (D.token) {
-      var bLer = el('button', 'Ler músicas do Drive');
-      bLer.onclick = lerDrive;
-      UI.selo(bLer, 'Só lê');
-      barra.appendChild(bLer);
-    }
-    n.appendChild(barra);
-    if (D.token) {
-      if (estado.arquivos.length) {
-        var bTudo = el('button', '🔄 Atualizar tudo (ler o Drive, subir o que falta, limpar repetidas e atualizar as playlists)');
-        bTudo.style.marginBottom = '10px';
-        bTudo.disabled = D.ocupado || D.tudo;
-        bTudo.onclick = function () { atualizarTudo(); };
-      } else {
-        n.appendChild(el('p', 'Para usar o "Atualizar tudo", escolha a pasta das músicas (botão lá em cima).', 'suave'));
-      }
-    }
-    if (D.msg && UI.tipoDe(D.msg) !== 'prog') n.appendChild(UI.resumo(D.msg));
+  // Uma ação: botão + selo de segurança + UMA linha explicando.
+  function acaoItem(rotulo, selo, linha, fazer, desativar) {
+    var a = el('div', null, 'acao');
+    var l = el('div', null, 'acao-linha');
+    var b = el('button', rotulo, 'btn-s');
+    b.type = 'button';
+    b.disabled = !!desativar;
+    b.onclick = fazer;
+    l.appendChild(b);
+    if (selo) l.appendChild(el('span', selo, 'selo'));
+    a.appendChild(l);
+    a.appendChild(el('p', linha, 'acao-texto'));
+    return a;
+  }
 
+  function secao(c, titulo) {
+    var s = el('section', null, 'secao');
+    s.appendChild(el('h2', titulo, 'eyebrow secao-titulo'));
+    c.appendChild(s);
+    return s;
+  }
+
+  function abaDrive(c) {
+    var ocup = !!(D.ocupado || D.tudo);
+
+    // (a) Situação
+    var sit = secao(c, 'Situação');
+    if (!D.token) {
+      sit.appendChild(el('p', 'Escolha a pasta e entre com o Google (veja o passo lá em cima) para ver o seu Drive aqui.', 'situacao'));
+    } else if (!D.itens) {
+      sit.appendChild(el('p', 'Ainda não li o seu Drive. Use "Ler o Drive" aqui embaixo, ou "Atualizar tudo" lá em cima.', 'situacao'));
+    }
+    var nSite = 0;
+    var noSite = {};
+    var gd = {};
+    var faltam = [];
+    var plano = [];
+    var totalLixo = 0;
     if (D.itens) {
-      var noSite = {};
-      var gd = {};
-      var nSite = 0;
       D.itens.forEach(function (d) {
         if (d.site) { noSite[d.k] = true; nSite++; }
         if (d.k) (gd[d.k] = gd[d.k] || []).push(d);
       });
-      n.appendChild(el('p', 'Na pasta "' + PASTA_RAIZ + '" do Drive: ' + nSite + ' músicas. No resto do Drive: ' + (D.itens.length - nSite) + '.', 'suave'));
-
       if (estado.arquivos.length) {
-        var faltam = faltamSubir();
+        faltam = faltamSubir();
         var jaTem = estado.arquivos.filter(function (m) { return noSite[m.k]; }).length;
-        n.appendChild(el('p', 'Do seu PC: ' + jaTem + ' já estão na pasta "' + PASTA_RAIZ + '" e ' + faltam.length + ' ainda faltam subir para ela. Se a mesma música está em duas pastas do PC, só uma cópia sobe.'));
-        if (faltam.length && D.token) {
-          var bSubir = el('button', '⬆ Subir as ' + faltam.length + ' que faltam para o Drive');
-          bSubir.onclick = function () { subirFaltantes(); };
-          UI.selo(bSubir, 'Sobe arquivos');
-          bSubir.disabled = D.ocupado || D.tudo;
-          n.appendChild(bSubir);
-        }
-        listaSimples(n, 'Faltam subir para a pasta "' + PASTA_RAIZ + '"', faltam.map(function (m) { return m.c; }));
+        sit.appendChild(el('p', jaTem + ' já estão na pasta "' + PASTA_RAIZ + '". ' + faltam.length + ' ainda faltam subir.', 'situacao'));
       } else {
-        n.appendChild(el('p', 'Para comparar com o PC, escolha a pasta das músicas (botão lá em cima).', 'suave'));
+        sit.appendChild(el('p', 'Na pasta "' + PASTA_RAIZ + '" do Drive há ' + nSite + ' músicas. Escolha a pasta do PC para comparar.', 'situacao'));
       }
+      sit.appendChild(el('p', 'No Drive: ' + nSite + ' na pasta "' + PASTA_RAIZ + '" e ' + (D.itens.length - nSite) + ' no resto.', 'nota'));
+      plano = planoLixeira();
+      totalLixo = plano.reduce(function (s, g) { return s + g.lixo.length; }, 0);
+    }
 
-      // Repetidas DENTRO da pasta do site: o site limpa (lixeira).
-      var plano = planoLixeira();
-      var totalLixo = plano.reduce(function (s, g) { return s + g.lixo.length; }, 0);
-      listaSimples(n, 'Repetidas dentro da pasta "' + PASTA_RAIZ + '"', plano.map(function (g) {
-        return 'Fica: ' + g.manter.p + '/' + g.manter.fn + ' (' + (g.manter.t / 1048576).toFixed(1) + ' MB)  →  Lixeira: ' + g.lixo.map(function (d) { return d.p + '/' + d.fn + ' (' + (d.t / 1048576).toFixed(1) + ' MB)'; }).join('  |  ');
+    // (b) Ações
+    if (D.token) {
+      var ac = secao(c, 'Ações');
+      var caixaAc = el('div', null, 'lista');
+      if (D.itens && estado.arquivos.length && faltam.length) {
+        caixaAc.appendChild(acaoItem('Subir as ' + faltam.length + ' que faltam', 'Sobe arquivos', 'Cria a pasta "' + PASTA_RAIZ + '" no Drive e sobe só uma cópia de cada música (a maior).', function () { subirFaltantes(); }, ocup));
+      }
+      if (totalLixo) {
+        caixaAc.appendChild(acaoItem('Mandar ' + totalLixo + ' para a lixeira', 'Você confirma antes', 'Só dentro de "' + PASTA_RAIZ + '". Fica a cópia maior; dá para recuperar pela lixeira do Drive.', function () { mandarParaLixeira(); }, ocup));
+      }
+      if (D.itens && estado.arquivos.length) {
+        caixaAc.appendChild(acaoItem('Atualizar as playlists no Drive', 'Drive', 'Coloca o arquivo de playlists na pasta "Toxic Playlists" do seu Drive.', function () { enviarParaDrive(); }, ocup));
+      }
+      caixaAc.appendChild(acaoItem(D.itens ? 'Ler o Drive de novo' : 'Ler o Drive', 'Só lê', 'Atualiza esta tela com o que está no seu Drive agora.', function () { lerDrive(); }, ocup));
+      ac.appendChild(caixaAc);
+
+      var saiba = document.createElement('details');
+      saiba.className = 'saiba';
+      saiba.appendChild(el('summary', 'Saiba mais'));
+      [['O que faz: ', 'Mostra o que está no seu Drive, sobe o que falta e limpa as repetidas.'],
+       ['Mexe em quê: ', 'Só na pasta "' + PASTA_RAIZ + '" e na pasta "Toxic Playlists", que o próprio site cria.'],
+       ['É seguro? ', 'Sim. Nada é apagado de vez: as repetidas vão para a lixeira do Drive, só depois que você confirma.']].forEach(function (x) {
+        var p = el('p');
+        p.appendChild(el('b', x[0]));
+        p.appendChild(document.createTextNode(x[1]));
+        saiba.appendChild(p);
+      });
+      ac.appendChild(saiba);
+    }
+
+    // (c) Listas longas (fechadas)
+    if (D.itens) {
+      var ls = secao(c, 'Listas');
+      var caixaL = el('div', null, 'lista');
+      if (estado.arquivos.length) {
+        caixaL.appendChild(recolhivel('faltam', 'Faltam subir para "' + PASTA_RAIZ + '"', faltam.length, function (corpo) {
+          linhasSimples(corpo, faltam.map(function (m) { return m.c; }), 200);
+        }));
+      }
+      caixaL.appendChild(recolhivel('dentro', 'Repetidas dentro da pasta "' + PASTA_RAIZ + '"', plano.length, function (corpo) {
+        linhasSimples(corpo, plano.map(function (g) {
+          return 'Fica: ' + g.manter.p + '/' + g.manter.fn + ' (' + (g.manter.t / 1048576).toFixed(1) + ' MB)  →  Lixeira: ' + g.lixo.map(function (d) { return d.p + '/' + d.fn + ' (' + (d.t / 1048576).toFixed(1) + ' MB)'; }).join('  |  ');
+        }), 200);
       }));
-      if (totalLixo && D.token) {
-        var bLixo = el('button', '🗑 Mandar ' + totalLixo + ' cópia(s) repetida(s) para a lixeira do Drive');
-        bLixo.style.marginTop = '8px';
-        bLixo.onclick = function () { mandarParaLixeira(); };
-        UI.selo(bLixo, 'Vai para a lixeira (você confirma antes)');
-        bLixo.disabled = D.ocupado || D.tudo;
-        n.appendChild(bLixo);
-      }
-
-      // Repetidas que envolvem arquivos FORA da pasta do site: o site não pode mexer, você apaga pelo Drive.
+      // Repetidas que envolvem arquivos FORA da pasta do site: o site não mexe, você apaga pelo Drive.
       var fora = Object.keys(gd).filter(function (k) {
         return gd[k].length > 1 && gd[k].some(function (d) { return !d.site; });
       }).sort(function (a, b) { return gd[b].length - gd[a].length; });
-      n.appendChild(el('h3', 'Repetidas com arquivos fora da pasta "' + PASTA_RAIZ + '" (' + fora.length + ')'));
-      if (!fora.length) {
-        n.appendChild(el('p', 'Nenhuma. 🎉', 'suave'));
-      } else {
-        n.appendChild(el('p', 'O site não consegue mexer nos arquivos "fora do site". Clique em "abrir no Drive" e apague por lá.', 'suave'));
-        var caixaF = el('div', null, 'rolagem');
+      caixaL.appendChild(recolhivel('fora', 'Repetidas com arquivos fora da pasta "' + PASTA_RAIZ + '"', fora.length, function (corpo) {
+        if (!fora.length) { corpo.appendChild(el('div', 'Nenhuma.', 'linha-simples mu')); return; }
+        corpo.appendChild(el('div', 'O site não consegue mexer nos arquivos "fora do site". Clique em "abrir no Drive" e apague por lá.', 'linha-simples mu'));
         fora.slice(0, 100).forEach(function (k) {
-          var gr = el('div', null, 'grupo');
+          var gr = el('div', null, 'grupo-simples');
           gd[k].forEach(function (d) { gr.appendChild(linhaDrive(d)); });
-          caixaF.appendChild(gr);
+          corpo.appendChild(gr);
         });
-        n.appendChild(caixaF);
-        if (fora.length > 100) n.appendChild(el('p', 'Mostrando só os 100 primeiros grupos.', 'suave'));
-      }
-
-      if (estado.arquivos.length) {
-        var bEnv = el('button', '⬆ Colocar playlists no Drive (com o id de cada música)');
-        bEnv.style.marginTop = '12px';
-        bEnv.onclick = enviarParaDrive;
-        n.appendChild(bEnv);
-      }
+        if (fora.length > 100) corpo.appendChild(el('div', 'Mostrando só os 100 primeiros grupos.', 'linha-simples mu'));
+      }));
+      ls.appendChild(caixaL);
     }
-    c.appendChild(n);
+
+    // (d) Ferramentas avançadas (fechada)
+    var av = secao(c, 'Avançado');
+    var caixaAv = el('div', null, 'lista');
+    caixaAv.appendChild(ferramentas());
+    av.appendChild(caixaAv);
   }
 
-  function abaDrive(c) {
-    cartaoNuvem(c);
-    var adv = document.createElement('details');
-    adv.className = 'avancado';
-    adv.appendChild(el('summary', '🛠 Ferramentas avançadas (arquivos de playlists para o app do celular)'));
+  // Arquivos de playlists em JSON (o formato que o app do celular lê). Termos técnicos só aqui.
+  function ferramentas() {
+    var d = document.createElement('details');
+    d.className = 'rec';
+    if (estado.abertos.avancado) d.open = true;
+    d.addEventListener('toggle', function () { estado.abertos.avancado = d.open; });
+    d.appendChild(el('summary', 'Ferramentas avançadas'));
+    var corpo = el('div', null, 'avancado-corpo');
+    d.appendChild(corpo);
+
+    var intro = el('div', null, 'bloco');
+    intro.appendChild(el('p', 'Arquivos de playlists para o app do celular. O formato é JSON, um arquivo de texto com a lista das músicas. Ele usa os nomes reais dos seus arquivos.', 'nota'));
+    corpo.appendChild(intro);
     if (!estado.arquivos.length) {
-      c.appendChild(el('div', 'Para gerar os arquivos JSON, escolha a pasta das suas músicas (botão roxo lá em cima). O arquivo JSON usa os nomes reais dos seus arquivos.', 'cartao'));
-      return;
+      intro.appendChild(el('p', 'Para gerar os arquivos, escolha primeiro a pasta das suas músicas.', 'nota'));
+      return d;
     }
-    c.appendChild(adv);
-    if (estado.aviso) adv.appendChild(el('div', estado.aviso, 'cartao'));
+    if (estado.aviso) corpo.appendChild(el('div', estado.aviso, 'bloco'));
 
     // 0) Tudo de uma vez
-    var c0 = el('div', null, 'cartao');
-    c0.appendChild(el('h2', 'Tudo de uma vez: playlists inteligentes'));
-    c0.appendChild(el('p', 'Um único arquivo com as listas top, uma playlist para cada cantor (5 músicas ou mais) e uma para cada pasta. Cada playlist leva também uma regra, para o seu app achar músicas novas sozinho quando o Drive crescer.', 'suave'));
-    var botTudo = el('button', '⬇ Baixar playlists inteligentes');
-    botTudo.onclick = function () {
-      baixar('playlists-inteligentes.json', D.itens ? playlistsComId() : todasPlaylists(), true);
-    };
+    var c0 = el('div', null, 'bloco');
+    c0.appendChild(el('h3', 'Tudo de uma vez: playlists inteligentes'));
+    c0.appendChild(el('p', 'Um único arquivo com as listas top, uma playlist para cada cantor (5 músicas ou mais) e uma para cada pasta. Cada playlist leva também uma regra, para o seu app achar músicas novas sozinho quando o Drive crescer.', 'nota'));
+    var botTudo = el('button', 'Baixar playlists inteligentes', 'btn-s');
+    botTudo.type = 'button';
+    botTudo.onclick = function () { baixar('playlists-inteligentes.json', D.itens ? playlistsComId() : todasPlaylists(), true); };
     c0.appendChild(botTudo);
-    adv.appendChild(c0);
+    corpo.appendChild(c0);
 
     // 1) Playlists das listas top
-    var c1 = el('div', null, 'cartao');
-    c1.appendChild(el('h2', '1. Playlists das listas top'));
-    c1.appendChild(el('p', 'Cada lista vira uma playlist com as músicas que você já tem. Escolha o tamanho:', 'suave'));
-    var barraN = el('div', null, 'barra');
+    var c1 = el('div', null, 'bloco');
+    c1.appendChild(el('h3', '1. Playlists das listas top'));
+    c1.appendChild(el('p', 'Cada lista vira uma playlist com as músicas que você já tem. Escolha o tamanho:', 'nota'));
+    var barraN = el('div', null, 'barra-chips');
     [50, 100, 200].forEach(function (n) {
-      var b = el('button', 'Top ' + n, 'leve' + (estado.n === n ? ' ativa' : ''));
-      b.onclick = function () { estado.n = n; estado.aviso = ''; desenhar(); };
+      var b = el('button', 'Top ' + n, 'chip' + (estado.n === n ? ' ativa' : ''));
+      b.type = 'button';
+      b.setAttribute('aria-pressed', estado.n === n ? 'true' : 'false');
+      b.onclick = function () { estado.n = n; estado.aviso = ''; desenhar(true); };
       barraN.appendChild(b);
     });
     c1.appendChild(barraN);
     var ids = Object.keys(CH.listas);
-    if (!ids.length) c1.appendChild(el('p', 'Ainda não tem listas top. Rode a atualização no GitHub.', 'suave'));
+    if (!ids.length) c1.appendChild(el('p', 'Ainda não tem listas top. Rode a atualização no GitHub.', 'nota'));
+    var caixaListas = el('div', null, 'lista');
     ids.forEach(function (id) {
       var L = CH.listas[id];
       var tem = faixasDaLista(id, estado.n).length;
       var total = Math.min(estado.n, L.faixas.length);
-      var l = el('div', null, 'linha');
-      var nome = el('div', playlistDaLista(id, estado.n).nome, 'nome');
-      nome.appendChild(el('small', 'Você tem ' + tem + ' de ' + total));
-      l.appendChild(nome);
-      var b = el('button', 'Baixar JSON', 'leve');
+      var b = el('button', 'Baixar JSON', 'btn-s');
+      b.type = 'button';
       b.onclick = function () { baixar('playlist-' + nomeSeguro(L.nome) + '-' + estado.n + '.json', [playlistDaLista(id, estado.n)]); };
-      l.appendChild(b);
-      c1.appendChild(l);
+      var l = itemLista(playlistDaLista(id, estado.n).nome, 'Você tem ' + tem + ' de ' + total, []);
+      l.lastChild.appendChild(b);
+      caixaListas.appendChild(l);
     });
     if (ids.length) {
-      var todas = el('button', '⬇ Baixar JSON com TODAS as listas');
+      c1.appendChild(caixaListas);
+      var todas = el('button', 'Baixar JSON com TODAS as listas', 'btn-s');
+      todas.type = 'button';
       todas.style.marginTop = '12px';
       todas.onclick = function () {
         baixar('playlists-listas-top-' + estado.n + '.json', ids.map(function (id) { return playlistDaLista(id, estado.n); }));
       };
       c1.appendChild(todas);
     }
-    adv.appendChild(c1);
+    corpo.appendChild(c1);
 
     // 2) Por cantor
-    var c2 = el('div', null, 'cartao');
-    c2.appendChild(el('h2', '2. Playlist por cantor'));
-    c2.appendChild(el('p', 'Escreva o nome do cantor. Ele procura no nome do arquivo e no nome da pasta.', 'suave'));
-    var linha = el('div', null, 'barra');
+    var c2 = el('div', null, 'bloco');
+    c2.appendChild(el('h3', '2. Playlist por cantor'));
+    c2.appendChild(el('p', 'Escreva o nome do cantor. Ele procura no nome do arquivo e no nome da pasta.', 'nota'));
+    var linha = el('div', null, 'barra-chips');
     var campo = document.createElement('input');
     campo.type = 'text';
+    campo.className = 'campo';
     campo.placeholder = 'Nome do cantor';
-    campo.style.cssText = 'flex:1 1 220px;padding:12px;font-size:18px;border-radius:12px;border:1px solid var(--borda);background:var(--cartao);color:var(--texto);';
-    var gerar = el('button', 'Baixar JSON');
+    campo.setAttribute('aria-label', 'Nome do cantor');
+    var gerar = el('button', 'Baixar JSON', 'btn-s');
+    gerar.type = 'button';
     function gerarCantor() {
       var p = playlistPorCantor(campo.value);
       if (!p) { aviso('Escreva o nome de um cantor.'); return; }
@@ -1128,68 +1217,90 @@
     linha.appendChild(campo);
     linha.appendChild(gerar);
     c2.appendChild(linha);
-
     var arts = artistas();
     if (arts.length) {
-      c2.appendChild(el('p', 'Cantores que você mais tem (o site entende "Cantor - Música" e "Música - Cantor"):', 'suave'));
-      var chips = el('div', null, 'barra');
+      c2.appendChild(el('p', 'Cantores que você mais tem (o site entende "Cantor - Música" e "Música - Cantor"):', 'nota'));
+      var chips = el('div', null, 'barra-chips');
       arts.slice(0, 30).forEach(function (a) {
-        var b = el('button', a.nome + ' (' + a.faixas.length + ')', 'leve');
+        var b = el('button', a.nome + ' (' + a.faixas.length + ')', 'chip');
+        b.type = 'button';
         b.onclick = function () { baixar('playlist-' + nomeSeguro(a.nome) + '.json', [plArtista(a)]); };
         chips.appendChild(b);
       });
       c2.appendChild(chips);
       var muitos = arts.filter(function (a) { return a.faixas.length >= 5; });
-      var botCada = el('button', '⬇ Uma playlist para cada cantor com 5 músicas ou mais (' + muitos.length + ')');
-      botCada.onclick = function () {
-        baixar('playlists-cantores.json', muitos.map(function (a) { return plArtista(a); }));
-      };
-      if (muitos.length) c2.appendChild(botCada);
+      if (muitos.length) {
+        var botCada = el('button', 'Uma playlist para cada cantor com 5 músicas ou mais (' + muitos.length + ')', 'btn-s');
+        botCada.type = 'button';
+        botCada.style.marginTop = '12px';
+        botCada.onclick = function () { baixar('playlists-cantores.json', muitos.map(function (a) { return plArtista(a); })); };
+        c2.appendChild(botCada);
+      }
     } else {
-      c2.appendChild(el('p', 'Os nomes dos seus arquivos não têm um traço separando música e cantor (" - "), então não consegui listar os cantores. Você ainda pode digitar o nome do cantor acima.', 'suave'));
+      c2.appendChild(el('p', 'Os nomes dos seus arquivos não têm um traço separando música e cantor (" - "), então não consegui listar os cantores. Você ainda pode digitar o nome do cantor acima.', 'nota'));
     }
-    adv.appendChild(c2);
+    corpo.appendChild(c2);
 
     // 3) Por pasta
-    var c3 = el('div', null, 'cartao');
-    c3.appendChild(el('h2', '3. Uma playlist para cada pasta'));
+    var c3 = el('div', null, 'bloco');
+    c3.appendChild(el('h3', '3. Uma playlist para cada pasta'));
     var ps = pastas();
-    c3.appendChild(el('p', 'Você tem ' + ps.length + ' pasta(s) com música. Cada pasta vira uma playlist.', 'suave'));
-    var botPastas = el('button', '⬇ Baixar JSON das pastas');
+    c3.appendChild(el('p', 'Você tem ' + ps.length + ' pasta(s) com música. Cada pasta vira uma playlist.', 'nota'));
+    var botPastas = el('button', 'Baixar JSON das pastas', 'btn-s');
+    botPastas.type = 'button';
     botPastas.onclick = function () { baixar('playlists-pastas.json', ps); };
     c3.appendChild(botPastas);
-    adv.appendChild(c3);
+    corpo.appendChild(c3);
+    return d;
   }
 
-  function desenhar() {
-    desenharNumeros();
-    UI.passos(estado.arquivos.length > 0, !!D.token, !!D.itens);
-    UI.paraQue(estado.aba);
-    var bt = $('botaoTudo');
-    bt.disabled = !D.token || !estado.arquivos.length || D.ocupado || !!D.tudo;
-    $('botaoEntrar').firstChild.nodeValue = D.token ? 'Entrar de novo' : 'Entrar com Google';
+  // ---------- Montar a tela ----------
+
+  var PARA_QUE = {
+    repetidas: 'Mesmo nome e mesmo tamanho: quase certo que é o mesmo arquivo.',
+    top: 'As músicas mais tocadas do momento (Deezer), marcadas com o que você já tem.',
+    novidades: 'O que entrou e o que saiu das listas desde a última atualização.',
+    drive: 'O que está no seu Drive, o que falta subir e as repetidas para limpar.'
+  };
+
+  // Cartão principal + números (rápido: não refaz a lista de baixo).
+  function desenharTopo() {
+    var temItens = !!D.itens && estado.arquivos.length > 0;
+    var nSubir = temItens ? faltamSubir().length : null;
+    var nLixo = D.itens ? planoLixeira().reduce(function (s, g) { return s + g.lixo.length; }, 0) : null;
+    UI.hero({
+      pasta: estado.arquivos.length > 0,
+      google: !!D.token,
+      pastaNome: estado.pastaNome,
+      ocupado: !!D.ocupado,
+      tudo: !!D.tudo,
+      nSubir: nSubir,
+      nLixo: nLixo,
+      nDrive: D.itens ? D.itens.length : null,
+      podePasta: !!window.showDirectoryPicker,
+      antes: estado.antes ? { nome: estado.antes.nome } : null
+    });
+    desenharNumeros(nSubir);
+  }
+
+  // Desenha tudo. Durante uma operação longa só o topo é refeito (para ficar rápido).
+  function desenhar(forcar) {
+    desenharTopo();
+    var ocup = !!(D.ocupado || D.tudo);
+    if (ocup && estado.ocupDesenhado && !forcar) return;
+    estado.ocupDesenhado = ocup;
     var c = $('conteudo');
     esvaziar(c);
     document.querySelectorAll('.abas button').forEach(function (b) {
-      b.classList.toggle('ativa', b.getAttribute('data-aba') === estado.aba);
+      if (b.getAttribute('data-aba') === estado.aba) b.setAttribute('aria-current', 'true');
+      else b.removeAttribute('aria-current');
     });
+    $('paraque').textContent = PARA_QUE[estado.aba] || '';
     if (estado.aba === 'repetidas') abaRepetidas(c);
     else if (estado.aba === 'top') abaTop(c);
     else if (estado.aba === 'drive') abaDrive(c);
     else abaNovidades(c);
   }
-
-  UI.acaoEntrar = entrar;
-  $('botaoEntrar').onclick = entrar;
-  $('botaoTudo').onclick = function () { atualizarTudo(); };
-  var botaoDrive = document.createElement('button');
-  botaoDrive.setAttribute('data-aba', 'drive');
-  botaoDrive.textContent = 'Google Drive';
-  document.querySelector('.abas').appendChild(botaoDrive);
-
-  document.querySelectorAll('.abas button').forEach(function (b) {
-    b.onclick = function () { estado.aba = b.getAttribute('data-aba'); desenhar(); };
-  });
 
   // Texto que explica o que foi lido e o que foi ignorado.
   function resumo(pastaNome, achadas, stats) {
@@ -1213,6 +1324,7 @@
       await varrer(pasta, pasta.name + '/', lista, stats);
       preparar(lista);
       estado.arquivos = lista;
+      estado.pastaNome = pasta.name;
       estado.cache = {};
       estado.b = lista.map(function (m) { return m.b; });
       salvar();
@@ -1221,52 +1333,67 @@
       desenhar();
     } catch (e2) {
       UI.msg('Deu erro ao ler as músicas (' + (e2 && e2.name ? e2.name : 'erro') + '). Tente de novo.');
+      desenhar();
     }
   }
 
-  var botao = $('botaoPasta');
-  if (!window.showDirectoryPicker) {
-    UI.msg('Para ler a pasta, abra no Google Chrome ou no Microsoft Edge.');
-    botao.disabled = true;
-  }
-  botao.onclick = async function () {
+  // O botão grande do cartão principal faz o passo certo.
+  async function escolherPasta() {
     var pasta;
     try {
       pasta = await window.showDirectoryPicker({ mode: 'read' });
     } catch (e) {
+      if (e && e.name === 'AbortError') { UI.msg('Escolha a pasta quando quiser. Nada foi mudado.'); return; }
       UI.msg('A escolha da pasta foi cancelada ou o navegador não deixou (' + (e && e.name ? e.name : 'erro') + '). Tente uma pasta que não seja Downloads, Documentos ou Área de Trabalho.');
       return;
     }
     await guardarPasta(pasta);
     await lerPasta(pasta);
-  };
+  }
 
-  // Botão "Usar a pasta de antes": aparece se o site lembra de uma pasta.
+  function acaoPrincipal() {
+    if (D.ocupado || D.tudo || UI.andamento.ativo) return;
+    if (!estado.arquivos.length) { escolherPasta(); return; }
+    if (!D.token) { entrar(); return; }
+    atualizarTudo();
+  }
+
+  // "Usar a pasta de antes": aparece se o site lembra de uma pasta.
   async function iniciar() {
     if (!window.showDirectoryPicker) return;
     var guardada = await pastaGuardada();
     if (!guardada) return;
-    var botaoAntes = el('button', '↩ Usar a pasta de antes (' + guardada.name + ')', 'leve');
-    botaoAntes.style.marginLeft = '10px';
-    botao.parentNode.insertBefore(botaoAntes, botao.nextSibling);
-    botaoAntes.onclick = async function () {
-      try {
-        var perm = await guardada.requestPermission({ mode: 'read' });
-        if (perm !== 'granted') {
-          UI.msg('Você não deixou o acesso à pasta. Clique de novo e escolha "Permitir", ou use o botão "Escolher pasta das músicas".');
-          return;
+    estado.antes = {
+      nome: guardada.name,
+      usar: async function () {
+        try {
+          var perm = await guardada.requestPermission({ mode: 'read' });
+          if (perm !== 'granted') {
+            UI.msg('Você não deixou o acesso à pasta. Clique de novo e escolha "Permitir", ou use o botão "Escolher pasta das músicas".');
+            return;
+          }
+          await lerPasta(guardada);
+        } catch (e) {
+          UI.msg('Não consegui abrir a pasta de antes (' + (e && e.name ? e.name : 'erro') + '). Use o botão "Escolher pasta das músicas".');
         }
-        await lerPasta(guardada);
-      } catch (e) {
-        UI.msg('Não consegui abrir a pasta de antes (' + (e && e.name ? e.name : 'erro') + '). Use o botão "Escolher pasta das músicas".');
       }
     };
+    desenharTopo();
     try {
       if (await guardada.queryPermission({ mode: 'read' }) === 'granted') await lerPasta(guardada);
     } catch (e) { /* sem problema */ }
   }
 
+  UI.acaoEntrar = entrar;
+  UI.aoMudar = desenharTopo;
+  $('botaoPrincipal').onclick = acaoPrincipal;
+  $('botaoAntes').onclick = function () { if (estado.antes) estado.antes.usar(); };
+  document.querySelectorAll('.abas button').forEach(function (b) {
+    b.onclick = function () { estado.aba = b.getAttribute('data-aba'); desenhar(true); };
+  });
+
+  if (!window.showDirectoryPicker) UI.msg('Para ler a pasta, abra no Google Chrome ou no Microsoft Edge.');
   carregar();
-  desenhar();
+  desenhar(true);
   iniciar();
 })();
