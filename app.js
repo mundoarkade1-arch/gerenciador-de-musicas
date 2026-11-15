@@ -218,7 +218,7 @@
     var caixa = el('div', null, 'cartao rolagem');
     marcadas.forEach(function (m, i) {
       if (estado.soFalta && m.tem !== false) return;
-      if (estado.soFaltaYt && ytl.playlistId && ytl.feitas[m.f.id]) return;
+      if (estado.soFaltaYt && ytl.playlistId && (ytl.feitas[m.f.id] || ytl.manual[m.f.id])) return;
       var l = el('div', null, 'linha');
       l.appendChild(el('span', String(i + 1), 'pos'));
       var nome = el('div', m.f.t, 'nome');
@@ -226,7 +226,7 @@
       l.appendChild(nome);
       if (m.tem !== null) l.appendChild(el('span', m.tem ? 'já tenho' : 'falta', 'selo ' + (m.tem ? 'tenho' : 'falta')));
       if (ytl.playlistId) {
-        var noYt = !!ytl.feitas[m.f.id];
+        var noYt = !!(ytl.feitas[m.f.id] || ytl.manual[m.f.id]);
         l.appendChild(el('span', noYt ? 'no YouTube' : (ytl.sem[m.f.id] ? 'sem resultado' : 'falta no YouTube'), 'selo ' + (noYt ? 'tenho' : 'falta')));
       }
       caixa.appendChild(l);
@@ -238,7 +238,7 @@
 
   function cartaoYoutube(c, id, L, ytl) {
     var q = YT.quantas(id, L.faixas);
-    var feitas = L.faixas.filter(function (f) { return ytl.feitas[f.id]; }).length;
+    var feitas = L.faixas.filter(function (f) { return ytl.feitas[f.id] || ytl.manual[f.id]; }).length;
     var sem = L.faixas.filter(function (f) { return ytl.sem[f.id]; }).length;
     var cx = el('div', null, 'cartao');
     cx.appendChild(el('h2', '▶ Playlist no YouTube'));
@@ -261,6 +261,9 @@
         navigator.clipboard.writeText(fora.join('\n')).then(function () { bCop.textContent = 'Copiado! ✔'; }, function () { bCop.textContent = 'Não consegui copiar'; });
       };
       caixaSem.appendChild(bCop);
+      var bMan = el('button', '✋ Já adicionei na mão (' + sem + ')', 'leve');
+      bMan.onclick = function () { YT.marcarManual(id); desenhar(); };
+      caixaSem.appendChild(bMan);
       cx.appendChild(caixaSem);
     }
     cx.appendChild(el('p', 'Cota grátis de hoje: usei ' + YT.usado() + ' de ' + YT.COTA + '. Hoje ainda cabem cerca de ' + q.lote.length + ' músicas. O que não couber continua amanhã, de onde parou.', 'suave'));
@@ -329,7 +332,7 @@
     try {
       var r = await p;
       var ytl = YT.lista(id);
-      var feitas = L.faixas.filter(function (f) { return ytl.feitas[f.id]; }).length;
+      var feitas = L.faixas.filter(function (f) { return ytl.feitas[f.id] || ytl.manual[f.id]; }).length;
       var txt = 'Pronto! Coloquei ' + r.colocadas + ' música(s) na playlist.';
       if (r.semNovas) txt += ' ' + r.semNovas + ' não achei no YouTube (veja quais no quadro amarelo da playlist).';
       if (r.parou === 'completa') txt += ' A playlist está completa.';

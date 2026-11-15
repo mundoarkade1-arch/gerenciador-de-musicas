@@ -46,7 +46,8 @@
 
   function lista(id) {
     var l = D().listas[id];
-    if (!l) l = D().listas[id] = { playlistId: null, feitas: {}, sem: {} };
+    if (!l) l = D().listas[id] = { playlistId: null, feitas: {}, sem: {}, manual: {} };
+    if (!l.manual) l.manual = {};
     return l;
   }
 
@@ -54,7 +55,7 @@
   function quantas(id, faixas) {
     var l = lista(id);
     var disp = COTA - usado() - RESERVA - C_LER - (l.playlistId ? 0 : C_CRIAR);
-    var pendentes = faixas.filter(function (f) { return !l.feitas[f.id] && !l.sem[f.id]; });
+    var pendentes = faixas.filter(function (f) { return !l.feitas[f.id] && !l.sem[f.id] && !l.manual[f.id]; });
     var lote = [], gasto = 0;
     for (var i = 0; i < pendentes.length; i++) {
       var c = (D().videos[pendentes[i].id] ? 0 : C_BUSCA) + C_ITEM;
@@ -66,6 +67,13 @@
   }
 
   function liberarSem(id) { lista(id).sem = {}; salvar(); }
+  // Você adicionou na mão no YouTube: para de contar como "sem resultado" e nunca tenta de novo.
+  function marcarManual(id) {
+    var l = lista(id);
+    Object.keys(l.sem).forEach(function (k) { l.manual[k] = true; });
+    l.sem = {};
+    salvar();
+  }
 
   async function chamar(caminho, opcoes, custo) {
     opcoes = opcoes || {};
@@ -206,6 +214,7 @@
   YT.quantas = quantas;
   YT.enviar = enviar;
   YT.liberarSem = liberarSem;
+  YT.marcarManual = marcarManual;
   YT.diaCota = diaCota;
 
   g.YT = YT;
