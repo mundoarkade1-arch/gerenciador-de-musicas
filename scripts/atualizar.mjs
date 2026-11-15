@@ -3,16 +3,22 @@ import { readFile, writeFile } from 'node:fs/promises';
 
 const API = 'https://api.deezer.com';
 const ARQ = 'data/charts.js';
-const MAX = 200;
 
-// Para mudar uma lista, edite aqui. "busca" = nomes de playlist procurados no Deezer.
+// Para mudar uma lista, edite aqui.
+// "max" = quantas músicas. "busca" = nomes de playlist procurados no Deezer.
 const LISTAS = [
-  { id: 'mundo', nome: 'Top 200 Mundo', tipo: 'chart' },
-  { id: 'brasil', nome: 'Top 200 Brasil', tipo: 'playlist', busca: ['Top Brasil', 'Top Brazil'] },
-  { id: 'sertanejo', nome: 'Sertanejo em alta', tipo: 'playlist', busca: ['Top Sertanejo', 'Sertanejo Hits'] },
-  { id: 'sertanejo-classicos', nome: 'Sertanejo de todos os tempos', tipo: 'playlist', busca: ['Sertanejo Clássicos', 'Sertanejo Raiz', 'Os maiores sucessos sertanejos'] },
-  { id: 'funk', nome: 'Funk em alta', tipo: 'playlist', busca: ['Top Funk', 'Funk Hits', 'Funk Brasil'] },
-  { id: 'eletronica', nome: 'Eletrônica em alta', tipo: 'genero', genero: /electro/i },
+  { id: 'mundo', nome: 'Top 200 Mundo', tipo: 'chart', max: 200 },
+  { id: 'brasil', nome: 'Top 200 Brasil', tipo: 'playlist', max: 200, busca: ['Top Brasil', 'Top Brazil'] },
+  { id: 'funk', nome: 'Funk em alta', tipo: 'playlist', max: 50, busca: ['Top Funk', 'Funk Hits', 'Funk Brasil'] },
+  { id: 'funk-tiktok', nome: 'Funk viral do TikTok', tipo: 'playlist', max: 50, busca: ['Funk TikTok', 'Funk Viral', 'Funk Tiktok Brasil'] },
+  { id: 'sertanejo', nome: 'Sertanejo em alta', tipo: 'playlist', max: 100, busca: ['Top Sertanejo', 'Sertanejo Hits'] },
+  { id: 'sertanejo-classicos', nome: 'Sertanejo de todos os tempos', tipo: 'playlist', max: 200, busca: ['Sertanejo Clássicos', 'Sertanejo Raiz', 'Os maiores sucessos sertanejos'] },
+  { id: 'sertanejo-uni', nome: 'Sertanejo universitário', tipo: 'playlist', max: 100, busca: ['Sertanejo Universitário', 'Sertanejo Universitario Hits'] },
+  { id: 'eletronica', nome: 'Eletrônica em alta', tipo: 'genero', max: 100, genero: /electro/i },
+  { id: 'eletronica-2010', nome: 'Eletrônica 2006 a 2014', tipo: 'playlist', max: 100, busca: ['Electro Hits 2010', 'EDM Hits 2012', 'Electro House Hits', 'Best of Electro 2010s'] },
+  { id: 'pop', nome: 'Pop em alta', tipo: 'genero', max: 100, genero: /^pop$/i },
+  { id: 'pop-2010', nome: 'Pop 2006 a 2014', tipo: 'playlist', max: 100, busca: ['Pop Hits 2010', 'Pop Hits 2012', 'Anos 2010 Pop', 'Best of Pop 2010s'] },
+  { id: 'tiktok', nome: 'Viral do TikTok', tipo: 'playlist', max: 50, busca: ['TikTok Hits', 'Viral TikTok', 'TikTok Brasil'] },
 ];
 
 const espera = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -29,22 +35,22 @@ async function pegar(caminho) {
   throw new Error('Falhou: ' + caminho);
 }
 
-async function paginar(caminho) {
+async function paginar(caminho, max) {
   const out = [];
-  for (let idx = 0; out.length < MAX; idx += 100) {
+  for (let idx = 0; out.length < max; idx += 100) {
     const j = await pegar(`${caminho}${caminho.includes('?') ? '&' : '?'}limit=100&index=${idx}`);
     const d = j.data || [];
     out.push(...d);
     if (d.length < 100) break;
     await espera(150);
   }
-  return out.slice(0, MAX);
+  return out.slice(0, max);
 }
 
 async function acharPlaylist(buscas) {
   for (const q of buscas) {
     const j = await pegar('/search/playlist?limit=25&q=' + encodeURIComponent(q));
-    const bons = (j.data || []).filter((p) => p.nb_tracks >= 50);
+    const bons = (j.data || []).filter((p) => p.nb_tracks >= 30);
     const deezer = bons.find((p) => /deezer/i.test(p.user?.name || ''));
     const p = deezer || bons[0];
     if (p) return p;
@@ -56,15 +62,15 @@ async function acharPlaylist(buscas) {
 async function buscarLista(l) {
   let faixas, fonte = 'Deezer';
   if (l.tipo === 'chart') {
-    faixas = await paginar('/chart/0/tracks');
+    faixas = await paginar('/chart/0/tracks', l.max);
   } else if (l.tipo === 'genero') {
     const g = (await pegar('/genre')).data.find((x) => l.genero.test(x.name));
     if (!g) throw new Error('Gênero não achado');
-    faixas = await paginar(`/chart/${g.id}/tracks`);
+    faixas = await paginar(`/chart/${g.id}/tracks`, l.max);
     fonte = 'Deezer: ' + g.name;
   } else {
     const p = await acharPlaylist(l.busca);
-    faixas = await paginar(`/playlist/${p.id}/tracks`);
+    faixas = await paginar(`/playlist/${p.id}/tracks`, l.max);
     fonte = 'Deezer: ' + p.title;
   }
   const limpas = faixas.filter((x) => x && x.id).map((x) => ({ id: x.id, t: x.title_short || x.title, a: x.artist?.name || '' }));
