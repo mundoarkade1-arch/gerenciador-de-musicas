@@ -511,8 +511,9 @@
   }
 
   async function lerDrive() {
-    if (D.ocupado) return;
+    if (D.ocupado) return false;
     D.ocupado = true;
+    var okLer = false;
     try {
       D.msg = 'Lendo o seu Drive... pode demorar um pouco.';
       desenhar();
@@ -535,11 +536,13 @@
         D.itens.push({ id: f.id, fn: f.name, p: cam, k: limpar(s, false), b: limpar(s, true), t: Number(f.size || 0), site: cam === PASTA_RAIZ || cam.indexOf(PASTA_RAIZ + '/') === 0 });
       });
       D.msg = 'Pronto! Achei ' + D.itens.length + ' músicas no seu Drive.';
+      okLer = true;
     } catch (e) {
       D.msg = 'Deu erro: ' + e.message;
     }
     D.ocupado = false;
     desenhar();
+    return okLer;
   }
 
   function playlistsComId() {
@@ -641,10 +644,10 @@
     });
   }
 
-  async function subirFaltantes() {
-    if (D.ocupado) return;
+  async function subirFaltantes(quieto) {
+    if (D.ocupado) return false;
     var lista = faltamSubir();
-    if (!lista.length) { aviso('Não falta nenhuma música para subir.'); return; }
+    if (!lista.length) { aviso('Não falta nenhuma música para subir.'); return true; }
     D.ocupado = true;
     var certas = 0;
     var falhas = 0;
@@ -671,17 +674,18 @@
       D.ocupado = false;
       D.msg = 'Parou depois de subir ' + certas + ' música(s). ' + e.message;
       desenhar();
-      return;
+      return false;
     }
     D.ocupado = false;
     var texto = 'Subi ' + certas + ' música(s) para a pasta "' + PASTA_RAIZ + '".' + (falhas ? ' ' + falhas + ' não deu certo. Clique no botão de novo para tentar essas.' : '');
-    if (certas > 0) {
+    if (certas > 0 && !quieto) {
       await enviarParaDrive();
       D.msg = texto + ' ' + D.msg;
     } else {
       D.msg = texto;
     }
     desenhar();
+    return falhas === 0;
   }
 
   function listaSimples(c, titulo, linhas) {
@@ -720,12 +724,12 @@
     return out;
   }
 
-  async function mandarParaLixeira() {
-    if (D.ocupado) return;
+  async function mandarParaLixeira(quieto) {
+    if (D.ocupado) return false;
     var plano = planoLixeira();
     var total = plano.reduce(function (s, g) { return s + g.lixo.length; }, 0);
-    if (!total) { aviso('Não tem repetidas na pasta "' + PASTA_RAIZ + '" para limpar.'); return; }
-    if (!window.confirm('Vou mandar ' + total + ' cópia(s) repetida(s) para a LIXEIRA do Drive. Em cada grupo, fica a cópia maior. Nada é apagado de vez: você pode recuperar pela lixeira do Drive por 30 dias. Continuar?')) return;
+    if (!total) { aviso('Não tem repetidas na pasta "' + PASTA_RAIZ + '" para limpar.'); return true; }
+    if (!window.confirm('Vou mandar ' + total + ' cópia(s) repetida(s) para a LIXEIRA do Drive. Em cada grupo, fica a cópia maior. Nada é apagado de vez: você pode recuperar pela lixeira do Drive por 30 dias. Continuar?')) return 'cancelado';
     D.ocupado = true;
     var certas = 0;
     var falhas = 0;
@@ -751,20 +755,52 @@
       D.ocupado = false;
       D.msg = 'Parou depois de mandar ' + certas + ' cópia(s) para a lixeira. ' + e.message;
       desenhar();
-      return;
+      return false;
     }
     D.itens = D.itens.filter(function (d) { return !idsOk[d.id]; });
     D.ocupado = false;
     var texto = 'Mandei ' + certas + ' cópia(s) para a lixeira do Drive.' + (falhas ? ' ' + falhas + ' não deu certo. Clique no botão de novo para tentar essas.' : '');
-    if (certas > 0 && estado.arquivos.length) {
+    if (certas > 0 && estado.arquivos.length && !quieto) {
       await enviarParaDrive();
       D.msg = texto + ' ' + D.msg;
-    } else if (certas > 0) {
+    } else if (certas > 0 && !quieto) {
       D.msg = texto + ' Para atualizar o arquivo de playlists, escolha a pasta das músicas (botão lá em cima) e clique em "Colocar playlists no Drive".';
     } else {
       D.msg = texto;
     }
     desenhar();
+    return falhas === 0;
+  }
+
+  // Um botão só: lê o Drive, sobe o que falta, limpa repetidas e atualiza as playlists.
+  async function atualizarTudo() {
+    if (D.ocupado || D.tudo) return;
+    if (!D.token) { aviso('Clique em "Entrar com Google" primeiro.'); return; }
+    if (!estado.arquivos.length) { aviso('Escolha a pasta das músicas (botão lá em cima) primeiro.'); return; }
+    D.tudo = true;
+    var partes = [];
+    try {
+      D.msg = 'Atualizando tudo... (não feche esta página)';
+      desenhar();
+      if (!(await lerDrive())) return;
+      partes.push(D.msg);
+      if (faltamSubir().length) {
+        var okSubir = await subirFaltantes(true);
+        partes.push(D.msg);
+        if (!okSubir) return;
+      }
+      if (planoLixeira().length) {
+        var okLixo = await mandarParaLixeira(true);
+        partes.push(D.msg);
+        if (okLixo === false) return;
+      }
+      await enviarParaDrive();
+      partes.push(D.msg);
+    } finally {
+      D.tudo = false;
+      if (partes.length) D.msg = partes.join(' ');
+      desenhar();
+    }
   }
 
   function linhaDrive(d) {
@@ -793,6 +829,17 @@
       barra.appendChild(bLer);
     }
     n.appendChild(barra);
+    if (D.token) {
+      if (estado.arquivos.length) {
+        var bTudo = el('button', '🔄 Atualizar tudo (ler o Drive, subir o que falta, limpar repetidas e atualizar as playlists)');
+        bTudo.style.marginBottom = '10px';
+        bTudo.disabled = D.ocupado || D.tudo;
+        bTudo.onclick = function () { atualizarTudo(); };
+        n.appendChild(bTudo);
+      } else {
+        n.appendChild(el('p', 'Para usar o "Atualizar tudo", escolha a pasta das músicas (botão lá em cima).', 'suave'));
+      }
+    }
     if (D.msg) n.appendChild(el('p', D.msg));
 
     if (D.itens) {
@@ -811,8 +858,8 @@
         n.appendChild(el('p', 'Do seu PC: ' + jaTem + ' já estão na pasta "' + PASTA_RAIZ + '" e ' + faltam.length + ' ainda faltam subir para ela. Se a mesma música está em duas pastas do PC, só uma cópia sobe.'));
         if (faltam.length && D.token) {
           var bSubir = el('button', '⬆ Subir as ' + faltam.length + ' que faltam para o Drive');
-          bSubir.onclick = subirFaltantes;
-          bSubir.disabled = D.ocupado;
+          bSubir.onclick = function () { subirFaltantes(); };
+          bSubir.disabled = D.ocupado || D.tudo;
           n.appendChild(bSubir);
         }
         listaSimples(n, 'Faltam subir para a pasta "' + PASTA_RAIZ + '"', faltam.map(function (m) { return m.c; }));
@@ -829,8 +876,8 @@
       if (totalLixo && D.token) {
         var bLixo = el('button', '🗑 Mandar ' + totalLixo + ' cópia(s) repetida(s) para a lixeira do Drive');
         bLixo.style.marginTop = '8px';
-        bLixo.onclick = mandarParaLixeira;
-        bLixo.disabled = D.ocupado;
+        bLixo.onclick = function () { mandarParaLixeira(); };
+        bLixo.disabled = D.ocupado || D.tudo;
         n.appendChild(bLixo);
       }
 
