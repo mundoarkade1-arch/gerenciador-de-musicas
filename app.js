@@ -264,7 +264,12 @@
 
   function playlistDaLista(id, n) {
     var L = CH.listas[id];
-    return { nome: L.nome.replace(/^Top 200/, 'Top ' + n) + (/^Top 200/.test(L.nome) ? '' : ' (primeiras ' + n + ')'), origem: L.fonte, faixas: faixasDaLista(id, n) };
+    return {
+      nome: L.nome.replace(/^Top 200/, 'Top ' + n) + (/^Top 200/.test(L.nome) ? '' : ' (primeiras ' + n + ')'),
+      origem: L.fonte,
+      regra: { tipo: 'lista', itens: L.faixas.slice(0, n).map(function (f) { return { t: f.t, a: f.a }; }) },
+      faixas: faixasDaLista(id, n)
+    };
   }
 
   function nomeSeguro(t) {
@@ -280,13 +285,13 @@
     setTimeout(function () { t.remove(); }, 7000);
   }
 
-  function baixar(arquivo, playlists) {
-    playlists = playlists.filter(function (p) { return p.faixas.length > 0; });
+  function baixar(arquivo, playlists, manterVazias) {
+    if (!manterVazias) playlists = playlists.filter(function (p) { return p.faixas.length > 0; });
     if (!playlists.length) {
       aviso('Não achei nenhuma música dessa playlist na sua pasta. Nada foi baixado.');
       return;
     }
-    var obj = { formato: 'toxic-playlists', v: 1, gerado: new Date().toISOString(), playlists: playlists };
+    var obj = { formato: 'toxic-playlists', v: 2, gerado: new Date().toISOString(), playlists: playlists };
     var blob = new Blob([JSON.stringify(obj, null, 1)], { type: 'application/json' });
     var url = URL.createObjectURL(blob);
     var a = document.createElement('a');
@@ -308,7 +313,7 @@
       var h = limpar(m.c, true);
       if (toks.every(function (t) { return h.indexOf(t) >= 0; })) faixas.push(faixaLocal(m));
     });
-    return { nome: texto.trim(), origem: 'Cantor', faixas: faixas };
+    return { nome: texto.trim(), origem: 'Cantor', regra: { tipo: 'artista', nome: texto.trim() }, faixas: faixas };
   }
 
   function artistas() {
@@ -324,6 +329,10 @@
     return Object.keys(mapa).map(function (k) { return mapa[k]; }).sort(function (x, y) { return y.faixas.length - x.faixas.length; });
   }
 
+  function plArtista(a) {
+    return { nome: a.nome, origem: 'Cantor', regra: { tipo: 'artista', nome: a.nome }, faixas: a.faixas };
+  }
+
   function pastas() {
     var mapa = {};
     estado.arquivos.forEach(function (m) {
@@ -332,7 +341,7 @@
     });
     return Object.keys(mapa).map(function (p) {
       var nome = p.slice(p.lastIndexOf('/') + 1) || p;
-      return { nome: nome, origem: 'Pasta', faixas: mapa[p] };
+      return { nome: nome, origem: 'Pasta', regra: { tipo: 'pasta', nome: nome }, faixas: mapa[p] };
     });
   }
 
@@ -342,6 +351,20 @@
       return;
     }
     if (estado.aviso) c.appendChild(el('div', estado.aviso, 'cartao'));
+
+    // 0) Tudo de uma vez
+    var c0 = el('div', null, 'cartao');
+    c0.appendChild(el('h2', 'Tudo de uma vez: playlists inteligentes'));
+    c0.appendChild(el('p', 'Um único arquivo com as listas top, uma playlist para cada cantor (5 músicas ou mais) e uma para cada pasta. Cada playlist leva também uma regra, para o seu app achar músicas novas sozinho quando o Drive crescer.', 'suave'));
+    var botTudo = el('button', '⬇ Baixar playlists inteligentes');
+    botTudo.onclick = function () {
+      var todas = Object.keys(CH.listas).map(function (id) { return playlistDaLista(id, estado.n); });
+      artistas().filter(function (a) { return a.faixas.length >= 5; }).forEach(function (a) { todas.push(plArtista(a)); });
+      pastas().forEach(function (p) { todas.push(p); });
+      baixar('playlists-inteligentes.json', todas, true);
+    };
+    c0.appendChild(botTudo);
+    c.appendChild(c0);
 
     // 1) Playlists das listas top
     var c1 = el('div', null, 'cartao');
@@ -406,14 +429,14 @@
       var chips = el('div', null, 'barra');
       arts.slice(0, 30).forEach(function (a) {
         var b = el('button', a.nome + ' (' + a.faixas.length + ')', 'leve');
-        b.onclick = function () { baixar('playlist-' + nomeSeguro(a.nome) + '.json', [{ nome: a.nome, origem: 'Cantor', faixas: a.faixas }]); };
+        b.onclick = function () { baixar('playlist-' + nomeSeguro(a.nome) + '.json', [plArtista(a)]); };
         chips.appendChild(b);
       });
       c2.appendChild(chips);
       var muitos = arts.filter(function (a) { return a.faixas.length >= 5; });
       var botCada = el('button', '⬇ Uma playlist para cada cantor com 5 músicas ou mais (' + muitos.length + ')');
       botCada.onclick = function () {
-        baixar('playlists-cantores.json', muitos.map(function (a) { return { nome: a.nome, origem: 'Cantor', faixas: a.faixas }; }));
+        baixar('playlists-cantores.json', muitos.map(function (a) { return plArtista(a); }));
       };
       if (muitos.length) c2.appendChild(botCada);
     } else {
