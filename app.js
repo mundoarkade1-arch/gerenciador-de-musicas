@@ -6,8 +6,10 @@
   var PASTA_RAIZ = 'Músicas do Site';
   var CH = window.CHARTS || { atualizado: null, listas: {}, historico: [] };
   var $ = function (id) { return document.getElementById(id); };
-  var estado = { arquivos: [], b: [], aba: 'repetidas', lista: null, soFalta: false, soFaltaYt: false, tinhaSalvo: false, n: 50, cache: {}, aviso: '', pastaNome: '', lim: { repetidas: 50, top: 50, novidades: 50 }, abertos: {}, antes: null, ocupDesenhado: false };
+  var estado = { arquivos: [], b: [], aba: 'repetidas', lista: null, soFalta: false, soFaltaYt: false, tinhaSalvo: false, n: 50, cache: {}, aviso: '', pastaNome: '', lim: { repetidas: 50, top: 50, novidades: 50, motor: 50 }, abertos: {}, antes: null, ocupDesenhado: false };
   var D = { token: null, itens: null, ocupado: false };
+  // Motor Toxic: o que o motor deixou na pasta "Toxic Engine" do Drive (só leitura).
+  var M = { status: null, pendentes: null, ocupado: false, erro: '' };
   // D.msg manda o texto para a faixa de aviso (ui.js) e devolve o último texto.
   Object.defineProperty(D, 'msg', { get: function () { return UI.ultima || ''; }, set: function (v) { UI.msg(v); } });
 
@@ -1259,13 +1261,123 @@
     return d;
   }
 
+  // ---------- Motor Toxic: ler o que o motor deixou no Drive (SÓ LEITURA) ----------
+
+  var PASTA_MOTOR = 'Toxic Engine';
+
+  // Confere se o arquivo tem a cara certa. Campos que não conheço são ignorados.
+  function motorStatusValido(x) { return !!x && x.formato === 'toxic-engine-status' && typeof x.contagem === 'object' && x.contagem !== null; }
+  function motorPendentesValido(x) { return !!x && x.formato === 'toxic-engine-pendentes' && Array.isArray(x.itens); }
+
+  async function lerMotor() {
+    if (M.ocupado) return;
+    M.ocupado = true;
+    M.erro = '';
+    desenhar(true);
+    try {
+      D.msg = 'Lendo o que o motor deixou no seu Drive...';
+      var pastas = await listarDrive("name='" + PASTA_MOTOR + "' and mimeType='application/vnd.google-apps.folder' and trashed=false", 'id');
+      if (!pastas.length) {
+        M.status = null; M.pendentes = null;
+        M.erro = 'Não achei a pasta "' + PASTA_MOTOR + '" no seu Drive. No PC, dê dois cliques em "2-atualizar-tudo.bat" e depois tente de novo.';
+      } else {
+        var st = null;
+        var pe = null;
+        for (var i = 0; i < pastas.length && !st; i++) {
+          var arqs = await listarDrive("'" + pastas[i].id + "' in parents and trashed=false", 'id,name');
+          var idSt = null;
+          var idPe = null;
+          arqs.forEach(function (a) { if (a.name === 'engine-status.json') idSt = a.id; else if (a.name === 'pendentes.json') idPe = a.id; });
+          if (idSt) {
+            st = await api(API + '/' + encodeURIComponent(idSt) + '?alt=media');
+            if (idPe) pe = await api(API + '/' + encodeURIComponent(idPe) + '?alt=media');
+          }
+        }
+        if (!motorStatusValido(st)) {
+          M.status = null; M.pendentes = null;
+          M.erro = 'Achei a pasta "' + PASTA_MOTOR + '", mas não achei um "engine-status.json" válido dentro dela. Rode o "2-atualizar-tudo.bat" no PC.';
+        } else {
+          M.status = st;
+          M.pendentes = motorPendentesValido(pe) ? pe : null;
+          estado.lim.motor = PAGINA;
+          D.msg = 'Pronto! Li o que o motor deixou no seu Drive.';
+        }
+      }
+    } catch (e) {
+      M.erro = 'Deu erro: ' + e.message;
+      D.msg = M.erro;
+    }
+    M.ocupado = false;
+    desenhar(true);
+  }
+
+  function motorData(iso) {
+    var d = new Date(iso);
+    if (!iso || isNaN(d.getTime())) return '—';
+    return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  }
+  function motorNum(v) { var n = Number(v); return isFinite(n) ? n.toLocaleString('pt-BR') : '—'; }
+
+  function abaMotor(c) {
+    var sit = secao(c, 'Situação');
+    if (!D.token) {
+      sit.appendChild(el('p', 'Entre com o Google para ver o que o motor descobriu. Aqui o site só lê: não muda nada.', 'situacao'));
+      var bLogin = el('button', 'Entrar com Google', 'btn-v');
+      bLogin.type = 'button';
+      bLogin.style.marginTop = '16px';
+      bLogin.onclick = entrar;
+      sit.appendChild(bLogin);
+      return;
+    }
+    if (M.ocupado) { sit.appendChild(el('p', 'Lendo o que o motor deixou no seu Drive...', 'situacao')); return; }
+    if (M.erro) sit.appendChild(el('p', M.erro, 'situacao'));
+    if (!M.status && !M.erro) sit.appendChild(el('p', 'Ainda não li o motor. Use o botão "Ler o motor" aqui embaixo.', 'situacao'));
+
+    var st = M.status;
+    if (st) {
+      var estadoTxt = { ocioso: 'parado, sem tarefa', trabalhando: 'trabalhando agora', pausado: 'pausado', erro: 'com erro' }[st.motor && st.motor.estado] || '—';
+      var ue = st.ultimaExecucao || {};
+      sit.appendChild(el('p', 'Motor: ' + estadoTxt + '. Última execução: ' + motorData(ue.fim || ue.inicio) + (ue.resultado ? ' (' + ue.resultado + ')' : '') + '.', 'situacao'));
+      var ct = st.contagem;
+      sit.appendChild(el('p', motorNum(ct.pendentes) + ' faltam na biblioteca · ' + motorNum(ct.duplicadas) + ' repetidas · ' + motorNum(ct.comErro) + ' com erro · ' + motorNum(ct.naFila) + ' na fila.', 'nota'));
+      var idade = Date.now() - new Date(st.gerado).getTime();
+      if (isFinite(idade) && idade > 3 * 86400000) {
+        sit.appendChild(el('p', 'Atenção: estes dados são de ' + motorData(st.gerado) + '. Dê dois cliques em "2-atualizar-tudo.bat" no PC para atualizar.', 'nota'));
+      } else {
+        sit.appendChild(el('p', 'Dados gerados em ' + motorData(st.gerado) + '.', 'nota'));
+      }
+      (Array.isArray(st.avisos) ? st.avisos : []).slice(0, 5).forEach(function (a) { sit.appendChild(el('p', String(a), 'nota')); });
+    }
+
+    var ac = secao(c, 'Ações');
+    var caixaAc = el('div', null, 'lista');
+    caixaAc.appendChild(acaoItem(st ? 'Ler o motor de novo' : 'Ler o motor', 'Só lê', 'Lê os arquivos da pasta "' + PASTA_MOTOR + '" do seu Drive. Não muda nada.', function () { lerMotor(); }, false));
+    ac.appendChild(caixaAc);
+
+    if (st && M.pendentes) {
+      var itens = M.pendentes.itens;
+      var ls = secao(c, 'Faltam na biblioteca (' + motorNum(itens.length) + ')');
+      if (!itens.length) { ls.appendChild(vazio('Nada falta. Você já tem tudo das listas.')); return; }
+      var caixa = el('div', null, 'lista');
+      itens.slice(0, estado.lim.motor).forEach(function (it) {
+        var pils = it.origem ? [pilula(String(it.origem))] : [];
+        caixa.appendChild(itemLista(String(it.t || '—'), String(it.a || ''), pils, it.posicao != null ? it.posicao : null));
+      });
+      rodapeMais(caixa, 'motor', itens.length);
+      ls.appendChild(caixa);
+    } else if (st) {
+      c.appendChild(vazio('O motor não deixou a lista "pendentes.json". Rode o "2-atualizar-tudo.bat" no PC.'));
+    }
+  }
+
   // ---------- Montar a tela ----------
 
   var PARA_QUE = {
     repetidas: 'Mesmo nome e mesmo tamanho: quase certo que é o mesmo arquivo.',
     top: 'As músicas mais tocadas do momento (Deezer), marcadas com o que você já tem.',
     novidades: 'O que entrou e o que saiu das listas desde a última atualização.',
-    drive: 'O que está no seu Drive, o que falta subir e as repetidas para limpar.'
+    drive: 'O que está no seu Drive, o que falta subir e as repetidas para limpar.',
+    motor: 'O que o motor do PC descobriu: quais músicas das listas Top 200 ainda faltam na sua biblioteca.'
   };
 
   // Cartão principal + números (rápido: não refaz a lista de baixo).
@@ -1304,6 +1416,7 @@
     if (estado.aba === 'repetidas') abaRepetidas(c);
     else if (estado.aba === 'top') abaTop(c);
     else if (estado.aba === 'drive') abaDrive(c);
+    else if (estado.aba === 'motor') abaMotor(c);
     else abaNovidades(c);
   }
 
@@ -1396,7 +1509,11 @@
   $('botaoAntes').onclick = function () { if (estado.antes) estado.antes.usar(); };
   $('botaoGoogle').onclick = function () { if (!D.ocupado && !D.tudo && !UI.andamento.ativo) entrar(); };
   document.querySelectorAll('.abas button').forEach(function (b) {
-    b.onclick = function () { estado.aba = b.getAttribute('data-aba'); desenhar(true); };
+    b.onclick = function () {
+      estado.aba = b.getAttribute('data-aba');
+      desenhar(true);
+      if (estado.aba === 'motor' && D.token && !M.status && !M.erro && !M.ocupado) lerMotor();
+    };
   });
 
   if (!window.showDirectoryPicker) UI.msg('Para ler a pasta, abra no Google Chrome ou no Microsoft Edge.');
