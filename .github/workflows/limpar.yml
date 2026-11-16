@@ -1,0 +1,27 @@
+name: Limpar pasta repetida
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  limpar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Conferir que o site de verdade existe
+        run: |
+          test -f app.js || { echo "::error::app.js não encontrado na raiz. Nada foi mexido."; exit 1; }
+          test -f index.html || { echo "::error::index.html não encontrado na raiz. Nada foi mexido."; exit 1; }
+
+      - name: Mover o documento para o lugar certo e apagar a pasta repetida
+        run: |
+          git config user.name "limpeza"
+          git config user.email "limpeza@users.noreply.github.com"
+          if [ -f gerenciador-de-musicas/docs/ECOSSISTEMA.md ]; then
+            mkdir -p docs
+            git mv gerenciador-de-musicas/docs/ECOSSISTEMA.md docs/ECOSSISTEMA.md
+          fi
+          git rm -rf --ignore-unmatch gerenciador-de-musicas
+          git commit -m "Move ECOSSISTEMA.md para docs/ e apaga pasta repetida" || echo "nada para mudar"
+          git push
