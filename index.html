@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' https://accounts.google.com/gsi/style; script-src 'self' https://accounts.google.com/gsi/client; connect-src https://www.googleapis.com https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; img-src data:;">
 <title>Gerenciador de Músicas</title>
-<link rel="stylesheet" href="style.css?v=20261118">
+<link rel="stylesheet" href="style.css?v=20261120">
 </head>
 <body>
 
@@ -23,9 +23,17 @@
     <div class="topo-dir">
       <span id="etqPasta" class="etq" hidden></span>
       <span id="etqGoogle" class="etq" hidden></span>
+      <button id="botaoAjuda" class="btn-s peq" type="button">? Como usar</button>
       <button id="botaoTema" class="redondo" type="button" aria-label="Trocar tema"></button>
     </div>
   </header>
+
+  <!-- PASSO A PASSO (sempre visível) -->
+  <ol id="passosTopo" class="passos" aria-label="Passo a passo">
+    <li data-n="1" data-estado="agora"><b>1</b><span>Escolher a pasta<small>das músicas no seu PC</small></span></li>
+    <li data-n="2" data-estado="depois"><b>2</b><span>Entrar com o Google<small>para o site ver o seu Drive</small></span></li>
+    <li data-n="3" data-estado="depois"><b>3</b><span>Atualizar tudo<small>sobe, limpa e organiza</small></span></li>
+  </ol>
 
   <!-- 2. CARTÃO PRINCIPAL: o que fazer agora -->
   <section id="hero" class="hero" data-passo="1" aria-label="O que fazer agora">
@@ -53,27 +61,31 @@
   <div id="numeros" class="numeros" hidden></div>
 
   <!-- 4. ABAS -->
+  <p class="dica-abas">Clique numa aba para trocar de assunto:</p>
   <nav class="abas" aria-label="Seções">
-    <button type="button" data-aba="repetidas" aria-current="true">Repetidas</button>
+    <button type="button" data-aba="repetidas" aria-current="true">Repetidas no PC</button>
     <button type="button" data-aba="top">Top 200</button>
     <button type="button" data-aba="novidades">Novidades</button>
     <button type="button" data-aba="drive">Google Drive</button>
-    <button type="button" data-aba="motor">Motor</button>
+    <button type="button" data-aba="motor">Motor do PC (avançado)</button>
   </nav>
-  <p class="paraque"><span class="info-i" data-ico="info"></span><span id="paraque"></span></p>
+  <section class="paraque" aria-live="polite">
+    <p><b>O que é isto?</b> <span id="paraque"></span></p>
+    <p><b>O que eu faço aqui?</b> <span id="comofazer"></span></p>
+  </section>
 
   <!-- 5. CONTEÚDO DA ABA -->
   <main id="conteudo"></main>
 
   <footer class="rodape">
-    <button id="botaoHistorico" class="link" type="button">Ver últimos avisos</button>
+    <button id="botaoHistorico" class="link" type="button">Ver os últimos avisos do site</button>
   </footer>
 </div>
 
 <noscript><p class="vazio">Este site precisa do JavaScript ligado no navegador.</p></noscript>
-<script src="ui.js?v=20261118"></script>
-<script src="data/charts.js?v=20261118"></script>
-<script src="youtube.js?v=20261118"></script>
-<script src="app.js?v=20261118"></script>
+<script src="ui.js?v=20261120"></script>
+<script src="data/charts.js?v=20261120"></script>
+<script src="youtube.js?v=20261120"></script>
+<script src="app.js?v=20261120"></script>
 </body>
 </html>

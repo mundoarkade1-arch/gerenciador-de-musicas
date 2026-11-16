@@ -413,6 +413,12 @@
     var T = TEXTOS[lendoPasta ? 1 : (rodando ? 3 : passo)];
     var hero = $('hero');
     hero.setAttribute('data-passo', rodando ? (lendoPasta ? '1' : 'andamento') : String(passo));
+    // Faixa de passos no topo: feito / agora / depois
+    var passoAgora = lendoPasta ? 1 : (rodando ? 3 : passo);
+    document.querySelectorAll('#passosTopo li').forEach(function (li) {
+      var n = Number(li.getAttribute('data-n'));
+      li.setAttribute('data-estado', n < passoAgora ? 'feito' : (n === passoAgora ? 'agora' : 'depois'));
+    });
 
     // Etiquetas do topo: só aparecem quando o passo foi feito.
     function etiqueta(id, forte, resto, vale) {
@@ -437,6 +443,7 @@
       $('heroEyebrow').textContent = T.eb;
       $('heroTitulo').textContent = T.t;
       $('heroTexto').textContent = T.p;
+      if (passo === 1 && !d.podePasta) $('heroTexto').textContent = 'Este navegador não consegue ler a pasta. Abra este site no Google Chrome ou no Microsoft Edge, no computador.';
     }
     $('heroSelo').textContent = T.s;
     var b = $('botaoPrincipal');
@@ -499,6 +506,30 @@
     }
   };
 
+  // ---------- Janela de ajuda: passo a passo e significado das palavras ----------
+  UI.ajuda = function () {
+    var c = el('div', null, 'ajuda');
+    function p(forte, texto) { var x = el('p'); x.appendChild(el('b', forte)); x.appendChild(document.createTextNode(' ' + texto)); c.appendChild(x); }
+    c.appendChild(el('h3', 'Passo a passo'));
+    p('1. Escolha a pasta.', 'Clique no botão vermelho grande e escolha a pasta onde estão as músicas no seu computador. O site só LÊ a pasta: não muda nem apaga nada nela.');
+    p('2. Entre com o Google.', 'Para o site enxergar o seu Google Drive. Ele nunca vê a sua senha.');
+    p('3. Clique em "Atualizar tudo".', 'O site faz sozinho, em ordem: lê o Drive, sobe as músicas que faltam (uma cópia de cada), manda as repetidas para a lixeira do Drive (só depois de você confirmar) e atualiza o arquivo de playlists.');
+    c.appendChild(el('h3', 'O que são as abas'));
+    p('Repetidas no PC:', 'músicas que aparecem mais de uma vez na sua pasta. Só mostra, não apaga.');
+    p('Top 200:', 'as músicas mais tocadas agora, por gênero, com a marca do que você já tem. Daqui também dá para criar uma playlist no YouTube.');
+    p('Novidades:', 'o que entrou e o que saiu das listas Top 200.');
+    p('Google Drive:', 'os passos 1 a 4 para subir músicas, limpar repetidas e gerar playlists.');
+    p('Motor do PC:', 'área avançada, só para quem usa o programa Toxic Engine no computador.');
+    c.appendChild(el('h3', 'Palavras que aparecem no site'));
+    p('Drive:', 'o seu espaço na internet no Google, onde ficam as músicas guardadas.');
+    p('Lixeira do Drive:', 'as repetidas não somem de vez: ficam na lixeira por 30 dias e dá para recuperar.');
+    p('JSON:', 'um arquivo de texto com a lista de músicas de uma playlist. É o que o app do celular lê.');
+    p('Cota do YouTube:', 'o YouTube deixa criar cerca de 64 itens por dia de graça. O que sobrar continua no dia seguinte.');
+    c.appendChild(el('h3', 'Dica'));
+    p('O que é clicável?', 'Tudo que tem borda ou fundo de botão, e as linhas com a palavra "Clique para ver". O resto é só texto.');
+    return janela({ titulo: 'Como usar o Gerenciador', corpo: c, botoes: [{ rotulo: 'Entendi', vermelho: true, valor: true }], esc: true });
+  };
+
   // ---------- Quando o script carrega ----------
   document.querySelectorAll('[data-ico]').forEach(function (n) { n.appendChild(icone(n.getAttribute('data-ico'))); });
   montarPlano();
@@ -516,6 +547,9 @@
     pintarTema();
   };
   $('botaoHistorico').onclick = UI.historico;
+  $('botaoAjuda').onclick = UI.ajuda;
+  // Primeira visita neste navegador: mostra a ajuda uma vez.
+  try { if (!localStorage.getItem('gm_ajuda1')) { localStorage.setItem('gm_ajuda1', '1'); setTimeout(UI.ajuda, 400); } } catch (e) { /* sem problema */ }
 
   window.UI = UI;
 })();

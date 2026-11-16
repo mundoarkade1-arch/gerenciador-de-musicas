@@ -1,5 +1,33 @@
 # Gerenciador de Músicas
 
+## Como usar (passo a passo, para quem não é de tecnologia)
+
+Abra o site no **Google Chrome** ou no **Microsoft Edge**, no computador.
+
+1. **Escolher a pasta.** Clique no botão vermelho grande e escolha a pasta das suas músicas. O site só lê, não muda nada nela.
+2. **Entrar com o Google.** Para o site enxergar o seu Drive. Ele nunca vê a sua senha.
+3. **Atualizar tudo.** Um clique e o site lê o Drive, sobe o que falta, manda as repetidas para a lixeira (só depois de você confirmar) e atualiza as playlists.
+
+Dúvidas? Clique em **? Como usar** no canto de cima do site.
+
+### O que tem em cada aba
+
+- **Repetidas no PC:** mostra as músicas repetidas da sua pasta. Só mostra, não apaga.
+- **Top 200:** as músicas mais tocadas por gênero, com a marca do que você já tem. Daqui dá para criar uma playlist no YouTube.
+- **Novidades:** o que entrou e saiu das listas.
+- **Google Drive:** os passos 1 a 4 (ler, subir, limpar, playlists).
+- **Motor do PC (avançado):** só para quem usa o programa Toxic Engine no computador.
+
+## Como colocar no GitHub (sem bagunçar as pastas)
+
+1. Descompacte o zip. Abra a pasta descompactada e selecione **tudo que está dentro dela** (Ctrl + A).
+2. No repositório, clique em **Add file > Upload files** e arraste tudo de uma vez (inclusive a pasta `.github`).
+3. Confira que `index.html` e `app.js` aparecem na **raiz** do repositório, e não dentro de outra pasta. Depois clique em **Commit changes**.
+
+---
+
+## Para quem mexe no código
+
 Programa simples que roda no navegador (Chrome ou Edge).
 
 - Lê a pasta de músicas do PC (só leitura) e acha as repetidas.

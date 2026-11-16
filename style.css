@@ -300,3 +300,62 @@ details > summary::-webkit-details-marker { display: none; }
 .yt-sem { background: var(--s2); border: 1px solid var(--amb); border-radius: 16px; padding: 16px 20px; margin: 4px 0 14px; font-size: 15px; }
 .yt-sem ul { margin: 8px 0 14px; padding-left: 20px; max-height: 220px; overflow: auto; color: var(--mu); }
 .yt-sem .barra-chips { margin-bottom: 0; }
+
+/* ===== Ajuda para quem é leigo: o que é clicável fica com cara de botão ===== */
+.peq { min-height: 40px; padding: 0 16px; font-size: 14px; }
+.btn-s { border-color: var(--mu); }
+.btn-s:hover { border-color: var(--rt); }
+.chip { background: var(--s2); border-color: var(--mu); color: var(--tx); }
+.chip:hover { border-color: var(--rt); }
+.chip.ativa { background: var(--r); border-color: var(--r); color: #fff; }
+
+/* Passo a passo no topo */
+.passos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 0 0 20px; }
+.passos li { display: flex; align-items: center; gap: 14px; padding: 14px 18px; border: 1px solid var(--bd2); border-radius: var(--rd-l); background: var(--s1); color: var(--mu); }
+.passos b { width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--bd2); display: grid; place-items: center; flex: none; font-size: 16px; }
+.passos span { display: block; font-weight: 600; font-size: 15px; }
+.passos small { display: block; font-weight: 400; font-size: 13px; color: var(--mu); }
+.passos li[data-estado="agora"] { border-color: var(--r); color: var(--tx); }
+.passos li[data-estado="agora"] b { background: var(--r); border-color: var(--r); color: #fff; }
+.passos li[data-estado="feito"] { border-color: var(--okb); }
+.passos li[data-estado="feito"] b { background: #123524; border-color: var(--okb); color: var(--ok); font-size: 0; }
+.passos li[data-estado="feito"] b::after { content: "\2713"; font-size: 18px; }
+
+/* Abas com cara de botão */
+.dica-abas { margin-top: 48px; font-size: 14px; color: var(--mu); }
+.abas { gap: 10px; border-bottom: 0; padding: 8px 0 4px; }
+.abas button { margin: 0; padding: 0 20px; border: 1px solid var(--mu); border-radius: var(--rd-p); background: var(--s2); color: var(--tx); font-weight: 600; }
+.abas button:hover { border-color: var(--rt); }
+.abas button[aria-current="true"] { background: var(--r); border-color: var(--r); color: #fff; }
+
+/* Caixa "o que é / o que faço" */
+.paraque { display: block; margin: 16px 0 20px; padding: 18px 22px; background: var(--s1); border: 1px solid var(--bd); border-left: 4px solid var(--r); border-radius: var(--rd-l); color: var(--tx); }
+.paraque p + p { margin-top: 8px; }
+.paraque b { color: var(--rt); }
+.rotulo { font-weight: 600; margin: 4px 0 8px; }
+.callout { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; padding: 16px 22px; margin-bottom: 14px; background: var(--s1); border: 1px solid var(--bd2); border-radius: var(--rd-l); }
+.callout p { flex: 1 1 320px; font-size: 15px; }
+
+/* Linhas que abrem e fecham */
+.rec { border: 0; }
+.rec > summary { background: var(--s2); border-left: 4px solid var(--r); }
+.rec > summary .ver { font-size: 13px; font-weight: 600; color: var(--rt); text-decoration: underline; }
+.rec[open] > summary .ver { visibility: hidden; }
+.mais { background: var(--s2); color: var(--tx); font-weight: 600; text-decoration: underline; }
+
+/* Passos do Drive */
+.acao .btn-s:not(:disabled) { border-color: var(--r); color: var(--tx); font-weight: 700; }
+.acao-motivo { margin-top: 6px; font-size: 14px; color: var(--am); }
+
+/* Janela de ajuda */
+.ajuda h3 { font-size: 16px; margin: 18px 0 8px; color: var(--rt); }
+.ajuda h3:first-child { margin-top: 0; }
+.ajuda p { margin-bottom: 8px; font-size: 15px; }
+.janela:has(.ajuda) { max-height: 90vh; }
+
+@media (max-width: 760px) {
+  .passos { grid-template-columns: 1fr; gap: 8px; }
+  .passos li { padding: 10px 14px; }
+  .dica-abas { margin-top: 32px; }
+  .paraque { padding: 14px 16px; }
+}

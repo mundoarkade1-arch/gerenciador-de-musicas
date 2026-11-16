@@ -204,6 +204,13 @@
     if (!estado.arquivos.length) { c.appendChild(vazio('Escolha a pasta das suas músicas para ver as repetidas.')); return; }
     var g = grupos();
     if (!g.lista.length) { c.appendChild(vazio('Não achei nenhuma música repetida.')); return; }
+    var cal = el('div', null, 'callout');
+    cal.appendChild(el('p', 'Esta lista só mostra as repetidas do seu computador. Nada é apagado daqui. Para limpar as repetidas que já estão no Drive, use a aba Google Drive.'));
+    var ir = el('button', 'Ir para a aba Google Drive', 'btn-s');
+    ir.type = 'button';
+    ir.onclick = function () { estado.aba = 'drive'; desenhar(true); var ab = document.querySelector('.abas'); if (ab) ab.scrollIntoView(); };
+    cal.appendChild(ir);
+    c.appendChild(cal);
     var caixa = el('div', null, 'lista');
     g.lista.slice(0, estado.lim.repetidas).forEach(function (k) {
       var arr = g.mapa[k];
@@ -227,6 +234,7 @@
     ids.forEach(function (id) { if (gens.indexOf(grupoDe(id)) < 0) gens.push(grupoDe(id)); });
     var gAtual = grupoDe(estado.lista);
     if (gens.length > 1) {
+      c.appendChild(el('p', '1. Escolha o gênero:', 'rotulo'));
       var barraG = el('div', null, 'barra-chips');
       gens.forEach(function (g) {
         var bg = el('button', g, 'chip' + (g === gAtual ? ' ativa' : ''));
@@ -237,6 +245,7 @@
       });
       c.appendChild(barraG);
     }
+    c.appendChild(el('p', (gens.length > 1 ? '2. ' : '1. ') + 'Escolha a lista:', 'rotulo'));
     var chips = el('div', null, 'barra-chips');
     ids.forEach(function (id) {
       if (grupoDe(id) !== gAtual) return;
@@ -254,6 +263,7 @@
     var faltam = marcadas.filter(function (m) { return m.tem === false; });
     c.appendChild(el('p', 'Fonte: ' + L.fonte + '.' + (estado.b.length ? ' Você já tem ' + temN + ' de ' + L.faixas.length + '.' : ' Escolha a pasta para ver o que você já tem.'), 'nota'));
 
+    c.appendChild(el('p', 'Etiquetas: "já tenho" = a música está na sua pasta. "falta" = você ainda não tem. Botões abaixo:', 'nota'));
     var acoes = el('div', null, 'barra-chips');
     var filtro = el('button', estado.soFalta ? 'Mostrar todas' : 'Mostrar só o que falta', 'chip');
     filtro.type = 'button';
@@ -299,7 +309,8 @@
     var feitas = L.faixas.filter(function (f) { return ytl.feitas[f.id] || ytl.manual[f.id]; }).length;
     var sem = L.faixas.filter(function (f) { return ytl.sem[f.id]; }).length;
     var cx = el('section', null, 'yt');
-    cx.appendChild(el('h2', 'Playlist no YouTube', 'eyebrow'));
+    cx.appendChild(el('h2', 'Playlist no YouTube (opcional)', 'eyebrow'));
+    cx.appendChild(el('p', 'Passo a passo: 1) clique em "Entrar com YouTube". 2) clique em "Enviar as próximas músicas". 3) Se a cota do dia acabar, volte amanhã e clique de novo: continua de onde parou.', 'nota'));
     var txt = ytl.playlistId
       ? 'Já estão na playlist: ' + feitas + ' de ' + L.faixas.length + '.' + (sem ? ' Sem resultado na busca: ' + sem + '.' : '') + ' Faltam: ' + (L.faixas.length - feitas - sem) + '.'
       : 'A playlist ainda não foi criada. Ela é criada como privada, só você vê.';
@@ -980,6 +991,7 @@
     var s = document.createElement('summary');
     s.appendChild(el('span', titulo));
     var dir = el('span', null, 'dir');
+    dir.appendChild(el('span', 'Clique para ver', 'ver'));
     dir.appendChild(pilula(String(contador), contador ? 'verm' : ''));
     s.appendChild(dir);
     d.appendChild(s);
@@ -1007,7 +1019,7 @@
   }
 
   // Uma ação: botão + selo de segurança + UMA linha explicando.
-  function acaoItem(rotulo, selo, linha, fazer, desativar) {
+  function acaoItem(rotulo, selo, linha, fazer, desativar, motivo) {
     var a = el('div', null, 'acao');
     var l = el('div', null, 'acao-linha');
     var b = el('button', rotulo, 'btn-s');
@@ -1018,6 +1030,7 @@
     if (selo) l.appendChild(el('span', selo, 'selo'));
     a.appendChild(l);
     a.appendChild(el('p', linha, 'acao-texto'));
+    if (desativar && motivo) a.appendChild(el('p', 'Por que está cinza: ' + motivo, 'acao-motivo'));
     return a;
   }
 
@@ -1066,27 +1079,25 @@
       totalLixo = plano.reduce(function (s, g) { return s + g.lixo.length; }, 0);
     }
 
-    // (b) Ações
+    // (b) Passo a passo: os 4 passos sempre aparecem, na ordem certa. Os que não dá para usar ficam cinza, com o motivo.
     if (D.token) {
-      var ac = secao(c, 'Ações');
+      var ac = secao(c, 'Passo a passo: faça de cima para baixo');
       var caixaAc = el('div', null, 'lista');
-      if (D.itens && estado.arquivos.length && faltam.length) {
-        caixaAc.appendChild(acaoItem('Subir as ' + faltam.length + ' que faltam', 'Sobe arquivos', 'Cria a pasta "' + PASTA_RAIZ + '" no Drive e sobe só uma cópia de cada música (a maior).', function () { subirFaltantes(); }, ocup));
-      }
-      if (totalLixo) {
-        caixaAc.appendChild(acaoItem('Mandar ' + totalLixo + ' para a lixeira', 'Você confirma antes', 'Só dentro de "' + PASTA_RAIZ + '". Fica a cópia maior; dá para recuperar pela lixeira do Drive.', function () { mandarParaLixeira(); }, ocup));
-      }
-      if (D.itens && estado.arquivos.length) {
-        caixaAc.appendChild(acaoItem('Atualizar as playlists no Drive', 'Drive', 'Coloca o arquivo de playlists na pasta "Toxic Playlists" do seu Drive.', function () { enviarParaDrive(); }, ocup));
-      }
-      caixaAc.appendChild(acaoItem(D.itens ? 'Ler o Drive de novo' : 'Ler o Drive', 'Só lê', 'Atualiza esta tela com o que está no seu Drive agora.', function () { lerDrive(); }, ocup));
+      var lido = !!D.itens;
+      var temPasta = estado.arquivos.length > 0;
+      var motBase = !lido ? 'faça o passo 1 primeiro.' : (!temPasta ? 'escolha a pasta das músicas lá em cima primeiro.' : '');
+      caixaAc.appendChild(acaoItem('1. ' + (lido ? 'Ler o Drive de novo' : 'Ler o Drive'), 'Só lê', 'Vê o que já está no seu Drive. Comece por aqui: os outros passos dependem deste.', function () { lerDrive(); }, ocup));
+      caixaAc.appendChild(acaoItem('2. ' + (faltam.length ? 'Subir as ' + faltam.length + ' que faltam' : 'Subir as que faltam'), 'Sobe arquivos', 'Cria a pasta \"' + PASTA_RAIZ + '\" no Drive e sobe só uma cópia de cada música (a maior).', function () { subirFaltantes(); }, ocup || !!motBase || !faltam.length, motBase || 'não falta nada: tudo já está no Drive.'));
+      caixaAc.appendChild(acaoItem('3. ' + (totalLixo ? 'Mandar ' + totalLixo + ' repetidas para a lixeira' : 'Limpar as repetidas'), 'Você confirma antes', 'Só dentro de \"' + PASTA_RAIZ + '\". Fica a cópia maior; dá para recuperar pela lixeira do Drive.', function () { mandarParaLixeira(); }, ocup || !lido || !totalLixo, !lido ? 'faça o passo 1 primeiro.' : 'não há repetidas dentro de \"' + PASTA_RAIZ + '\".'));
+      caixaAc.appendChild(acaoItem('4. Atualizar as playlists no Drive', 'Drive', 'Coloca o arquivo de playlists (para o app do celular) na pasta \"Toxic Playlists\" do seu Drive.', function () { enviarParaDrive(); }, ocup || !!motBase, motBase));
       ac.appendChild(caixaAc);
 
       var saiba = document.createElement('details');
       saiba.className = 'saiba';
-      saiba.appendChild(el('summary', 'Saiba mais'));
+      saiba.open = true;
+      saiba.appendChild(el('summary', 'Segurança: o que o site mexe'));
       [['O que faz: ', 'Mostra o que está no seu Drive, sobe o que falta e limpa as repetidas.'],
-       ['Mexe em quê: ', 'Só na pasta "' + PASTA_RAIZ + '" e na pasta "Toxic Playlists", que o próprio site cria.'],
+       ['Mexe em quê: ', 'Só na pasta \"' + PASTA_RAIZ + '\" e na pasta \"Toxic Playlists\", que o próprio site cria.'],
        ['É seguro? ', 'Sim. Nada é apagado de vez: as repetidas vão para a lixeira do Drive, só depois que você confirma.']].forEach(function (x) {
         var p = el('p');
         p.appendChild(el('b', x[0]));
@@ -1098,7 +1109,7 @@
 
     // (c) Listas longas (fechadas)
     if (D.itens) {
-      var ls = secao(c, 'Listas');
+      var ls = secao(c, 'Listas para conferir (clique numa linha para abrir)');
       var caixaL = el('div', null, 'lista');
       if (estado.arquivos.length) {
         caixaL.appendChild(recolhivel('faltam', 'Faltam subir para "' + PASTA_RAIZ + '"', faltam.length, function (corpo) {
@@ -1128,7 +1139,7 @@
     }
 
     // (d) Ferramentas avançadas (fechada)
-    var av = secao(c, 'Avançado');
+    var av = secao(c, 'Extras (opcional): playlists para o app do celular');
     var caixaAv = el('div', null, 'lista');
     caixaAv.appendChild(ferramentas());
     av.appendChild(caixaAv);
@@ -1140,12 +1151,12 @@
     d.className = 'rec';
     if (estado.abertos.avancado) d.open = true;
     d.addEventListener('toggle', function () { estado.abertos.avancado = d.open; });
-    d.appendChild(el('summary', 'Ferramentas avançadas'));
+    d.appendChild(el('summary', 'Clique aqui para abrir as ferramentas de playlist (arquivos JSON)'));
     var corpo = el('div', null, 'avancado-corpo');
     d.appendChild(corpo);
 
     var intro = el('div', null, 'bloco');
-    intro.appendChild(el('p', 'Arquivos de playlists para o app do celular. O formato é JSON, um arquivo de texto com a lista das músicas. Ele usa os nomes reais dos seus arquivos.', 'nota'));
+    intro.appendChild(el('p', 'Só precisa disto se você usa o app Toxic Player no celular; se não usa, pode ignorar. Arquivos de playlists para o app do celular. O formato é JSON, um arquivo de texto com a lista das músicas. Ele usa os nomes reais dos seus arquivos.', 'nota'));
     corpo.appendChild(intro);
     if (!estado.arquivos.length) {
       intro.appendChild(el('p', 'Para gerar os arquivos, escolha primeiro a pasta das suas músicas.', 'nota'));
@@ -1373,11 +1384,11 @@
   // ---------- Montar a tela ----------
 
   var PARA_QUE = {
-    repetidas: 'Mesmo nome e mesmo tamanho: quase certo que é o mesmo arquivo.',
-    top: 'As músicas mais tocadas do momento (Deezer), marcadas com o que você já tem.',
-    novidades: 'O que entrou e o que saiu das listas desde a última atualização.',
-    drive: 'O que está no seu Drive, o que falta subir e as repetidas para limpar.',
-    motor: 'O que o motor do PC descobriu: quais músicas das listas Top 200 ainda faltam na sua biblioteca.'
+    repetidas: { o: 'Músicas que aparecem mais de uma vez na pasta que você escolheu (mesmo nome e mesmo tamanho).', f: 'Só confira. Aqui nada é apagado. Para limpar as repetidas no Drive, vá na aba Google Drive.' },
+    top: { o: 'As 200 músicas mais tocadas agora (fonte: Deezer), por gênero. O site marca as que você já tem.', f: 'Escolha o gênero, escolha a lista e veja o que falta. Se quiser, crie uma playlist no YouTube mais abaixo.' },
+    novidades: { o: 'O que entrou e o que saiu das listas Top 200 desde a última atualização (feita todo dia).', f: 'Nada a fazer: é só para ver o que há de novo.' },
+    drive: { o: 'Aqui você manda as músicas do PC para o seu Google Drive, sem repetir.', f: 'Entre com o Google e siga os passos de 1 a 4, de cima para baixo.' },
+    motor: { o: 'Área avançada. Mostra o que o programa do PC (Toxic Engine) descobriu: quais músicas das listas ainda faltam na sua biblioteca.', f: 'Só use se você roda esse programa no PC. Entre com o Google e clique em \"Ler o motor\". Aqui o site só lê.' }
   };
 
   // Cartão principal + números (rápido: não refaz a lista de baixo).
@@ -1412,7 +1423,9 @@
       if (b.getAttribute('data-aba') === estado.aba) b.setAttribute('aria-current', 'true');
       else b.removeAttribute('aria-current');
     });
-    $('paraque').textContent = PARA_QUE[estado.aba] || '';
+    var pq = PARA_QUE[estado.aba] || { o: '', f: '' };
+    $('paraque').textContent = pq.o;
+    $('comofazer').textContent = pq.f;
     if (estado.aba === 'repetidas') abaRepetidas(c);
     else if (estado.aba === 'top') abaTop(c);
     else if (estado.aba === 'drive') abaDrive(c);
