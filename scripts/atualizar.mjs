@@ -62,7 +62,7 @@ const LISTAS = [
 
   // Pop
   gen('pop', 'Pop em alta', 'Pop', /^pop$/i),
-  { id: 'pop-2010', nome: 'Pop 2006 a 2014', grupo: 'Pop', tipo: 'playlist', max: 100, busca: ['Pop Hits 2010', 'Pop Hits 2012', 'Anos 2010 Pop', 'Best of Pop 2010s'] },
+  { id: 'pop-2006', nome: 'Pop 2006 a 2014', grupo: 'Pop', tipo: 'playlist', max: 100, busca: ['Pop Hits 2010', 'Pop Hits 2012', 'Anos 2010 Pop', 'Best of Pop 2010s'] },
   ...eras('pop', 'Pop', 'Pop', ['Pop']),
   em('kpop', 'K-pop em alta', 'Pop', ['K-Pop Hits', 'Top K-Pop', 'K-Pop']),
 
@@ -76,7 +76,7 @@ const LISTAS = [
 
   // Eletrônica
   gen('eletronica', 'Eletrônica em alta', 'Eletrônica', /electro/i),
-  { id: 'eletronica-2010', nome: 'Eletrônica 2006 a 2014', grupo: 'Eletrônica', tipo: 'playlist', max: 100, busca: ['Electro Hits 2010', 'EDM Hits 2012', 'Electro House Hits', 'Best of Electro 2010s'] },
+  { id: 'eletronica-2006', nome: 'Eletrônica 2006 a 2014', grupo: 'Eletrônica', tipo: 'playlist', max: 100, busca: ['Electro Hits 2010', 'EDM Hits 2012', 'Electro House Hits', 'Best of Electro 2010s'] },
   ...eras('eletronica', 'Eletrônica', 'Eletrônica', ['EDM', 'Electro']),
 
   // Latina, country e reggae
@@ -85,6 +85,15 @@ const LISTAS = [
   em('country', 'Country em alta', 'Latina e outros', ['Country Hits', 'Top Country', 'Country']),
   gen('reggae', 'Reggae em alta', 'Latina e outros', /reggae/i),
 ];
+
+// Trava de segurança: dois ids iguais fazem uma lista apagar a outra.
+{
+  const vistos = new Set();
+  for (const l of LISTAS) {
+    if (vistos.has(l.id)) throw new Error('Id de lista repetido: ' + l.id);
+    vistos.add(l.id);
+  }
+}
 
 const espera = (ms) => new Promise((r) => setTimeout(r, ms));
 

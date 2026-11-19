@@ -22,13 +22,41 @@
   function esvaziar(n) { while (n.firstChild) n.removeChild(n.firstChild); }
 
   // Deixa o nome "limpo" para comparar: sem acento, sem (1), sem "copia", sem símbolos.
+  // Colchetes só somem se forem "lixo": id de vídeo (ex.: [dQw4w9WgXcQ]) ou palavra de ruído.
+  // [Remix], [Ao Vivo] etc. ficam, para não confundir versões diferentes.
+  var RUIDO = /\b(official|oficial|audio|video|clipe|lyrics|letra|hd|hq|copia|copy)\b/;
   function limpar(t, tiraParenteses) {
-    t = (t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    t = t.replace(/\(\d+\)/g, ' ').replace(/\b(copia|copy)\b/g, ' ').replace(/\[[^\]]*\]/g, ' ');
+    t = (t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').normalize('NFC');
+    t = t.replace(/\(\d+\)/g, ' ').replace(/\b(copia|copy)\b/g, ' ');
+    t = t.replace(/\[([^\]]*)\]/g, function (tudo, dentro) {
+      var d = dentro.trim();
+      var ehId = /^[\w-]{11}$/.test(d) && /[\d_-]/.test(d);
+      return (ehId || RUIDO.test(d)) ? ' ' : ' ' + d + ' ';
+    });
     if (tiraParenteses) t = t.replace(/\([^)]*\)/g, ' ');
     t = t.replace(/\b(official|oficial|audio|video|clipe|lyrics|letra|hd|hq)\b/g, ' ');
-    return t.replace(/[^a-z0-9]+/g, ' ').trim();
+    // Mantém letras e números de QUALQUER idioma (japonês, coreano, russo, árabe...).
+    return t.replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
   }
+  // Nunca devolve vazio: se o nome só tem símbolos, usa o nome em minúsculas.
+  function chaveNome(s, tira) { return limpar(s, tira) || (s || '').toLowerCase().trim(); }
+
+  // Compara título e cantor com o nome de um arquivo (tudo já "limpo"), por palavras inteiras.
+  // "Love" não casa com "glove"; "Alone" não casa com "Alone in the dark ... remix".
+  // Aceita até 3 palavras sobrando (outros cantores, "4k", etc.).
+  function casa(b, t, a) {
+    var B = ' ' + b + ' ';
+    var ti = B.indexOf(' ' + t + ' ');
+    if (ti < 0) return false;
+    var resto = B.slice(0, ti) + ' ' + B.slice(ti + t.length + 1);
+    if (a) {
+      if (B.indexOf(' ' + a + ' ') < 0) return false;
+      var ai = resto.indexOf(' ' + a + ' ');
+      if (ai >= 0) resto = resto.slice(0, ai) + ' ' + resto.slice(ai + a.length + 1);
+    }
+    return resto.split(' ').filter(Boolean).length <= 3;
+  }
+  var memoTenho = {};
 
   // Lê a pasta e todas as subpastas. Se uma pasta der problema, pula ela e continua.
   async function varrer(dir, cam, lista, stats) {
@@ -51,7 +79,7 @@
           if (EXT.indexOf(ext) >= 0) {
             var f = await item.getFile();
             var s = item.name.slice(0, i);
-            lista.push({ c: cam + item.name, k: limpar(s, false), b: limpar(s, true), t: f.size, h: item });
+            lista.push({ c: cam + item.name, k: chaveNome(s, false), b: chaveNome(s, true), t: f.size, h: item });
           } else {
             stats.ignorados[ext] = (stats.ignorados[ext] || 0) + 1;
           }
@@ -65,14 +93,15 @@
   // Guarda só os nomes limpos (nunca o conteúdo) neste navegador, para lembrar da última leitura.
   function salvar() {
     try {
-      localStorage.setItem('gm_biblioteca', JSON.stringify({ d: Date.now(), b: estado.b }));
+      localStorage.setItem('gm_biblioteca', JSON.stringify({ v: 2, d: Date.now(), b: estado.b }));
     } catch (e) { /* sem problema */ }
   }
   function carregar() {
     try {
       var x = JSON.parse(localStorage.getItem('gm_biblioteca') || 'null');
-      if (x && x.b && x.b.length) {
+      if (x && x.v === 2 && x.b && x.b.length) {
         estado.b = x.b;
+        memoTenho = {};
         estado.tinhaSalvo = true;
         UI.msg('Última leitura salva: ' + new Date(x.d).toLocaleDateString('pt-BR') + '. Para ver as repetidas, escolha a pasta de novo.');
       }
@@ -117,11 +146,14 @@
     var t = limpar(f.t, true);
     if (!t) return false;
     var a = limpar((f.a || '').split(/,|&| feat/)[0], true);
+    var chave = t + '|' + a;
+    if (memoTenho[chave] !== undefined) return memoTenho[chave];
+    var achou = false;
     for (var i = 0; i < estado.b.length; i++) {
-      var b = estado.b[i];
-      if (b.indexOf(t) >= 0 && (!a || b.indexOf(a) >= 0)) return true;
+      if (casa(estado.b[i], t, a)) { achou = true; break; }
     }
-    return false;
+    memoTenho[chave] = achou;
+    return achou;
   }
 
   // ---------- Peças de tela (sem animação) ----------
@@ -519,8 +551,7 @@
     if (!t) return null;
     var a = limpar((f.a || '').split(/,|&| feat/)[0], true);
     for (var i = 0; i < estado.arquivos.length; i++) {
-      var b = estado.arquivos[i].b;
-      if (b.indexOf(t) >= 0 && (!a || b.indexOf(a) >= 0)) return estado.arquivos[i];
+      if (casa(estado.arquivos[i].b, t, a)) return estado.arquivos[i];
     }
     return null;
   }
@@ -633,15 +664,18 @@
 
   var API = 'https://www.googleapis.com/drive/v3/files';
 
+  var promessaGoogle = null;
   function carregarGoogle() {
-    return new Promise(function (ok, erro) {
-      if (window.google && window.google.accounts && window.google.accounts.oauth2) { ok(); return; }
+    if (window.google && window.google.accounts && window.google.accounts.oauth2) return Promise.resolve();
+    if (promessaGoogle) return promessaGoogle;
+    promessaGoogle = new Promise(function (ok, erro) {
       var s = document.createElement('script');
       s.src = 'https://accounts.google.com/gsi/client';
       s.onload = function () { ok(); };
-      s.onerror = function () { erro(new Error('Não consegui carregar o login do Google.')); };
+      s.onerror = function () { promessaGoogle = null; s.remove(); erro(new Error('Não consegui carregar o login do Google.')); };
       document.head.appendChild(s);
     });
+    return promessaGoogle;
   }
 
   async function entrar() {
@@ -676,8 +710,8 @@
     opcoes = opcoes || {};
     opcoes.headers = Object.assign({ Authorization: 'Bearer ' + D.token }, opcoes.headers || {});
     var r = await fetch(url, opcoes);
-    if (r.status === 401) { D.token = null; throw new Error('O login do Google venceu. Clique em "Entrar com Google" de novo.'); }
-    if (!r.ok) throw new Error('O Google respondeu com erro ' + r.status + '.');
+    if (r.status === 401) { D.token = null; throw new Error('O login do Google venceu (ele dura cerca de 1 hora). Clique em "Entrar com Google" de novo e depois em "Atualizar tudo": continua de onde parou.'); }
+    if (!r.ok) { var ee = new Error('O Google respondeu com erro ' + r.status + '.'); ee.status = r.status; throw ee; }
     return r.json();
   }
 
@@ -685,7 +719,7 @@
     var out = [];
     var tk = '';
     do {
-      var u = API + '?q=' + encodeURIComponent(q) + '&fields=' + encodeURIComponent('nextPageToken,files(' + campos + ')') + '&pageSize=1000' + (tk ? '&pageToken=' + encodeURIComponent(tk) : '');
+      var u = API + '?q=' + encodeURIComponent(q) + '&fields=' + encodeURIComponent('nextPageToken,files(' + campos + ')') + '&pageSize=1000&supportsAllDrives=true&includeItemsFromAllDrives=true' + (tk ? '&pageToken=' + encodeURIComponent(tk) : '');
       var r = await api(u);
       out = out.concat(r.files || []);
       tk = r.nextPageToken;
@@ -716,7 +750,7 @@
         if (i < 0 || EXT.indexOf(f.name.slice(i + 1).toLowerCase()) < 0) return;
         var s = f.name.slice(0, i);
         var cam = caminho((f.parents || [])[0]);
-        D.itens.push({ id: f.id, fn: f.name, p: cam, k: limpar(s, false), b: limpar(s, true), t: Number(f.size || 0), site: cam === PASTA_RAIZ || cam.indexOf(PASTA_RAIZ + '/') === 0 });
+        D.itens.push({ id: f.id, fn: f.name, p: cam, k: chaveNome(s, false), b: chaveNome(s, true), t: Number(f.size || 0), site: cam === PASTA_RAIZ || cam.indexOf(PASTA_RAIZ + '/') === 0 });
       });
       D.msg = 'Pronto! Achei ' + D.itens.length + ' músicas no seu Drive.';
       okLer = true;
@@ -796,7 +830,8 @@
 
   // Acha (ou cria) uma pasta dentro de outra, no Drive.
   async function achaOuCriaPasta(nome, paiId) {
-    var achados = await listarDrive("name='" + aspas(nome) + "' and mimeType='application/vnd.google-apps.folder' and '" + paiId + "' in parents and trashed=false", 'id');
+    var achados = await listarDrive("name='" + aspas(nome) + "' and mimeType='application/vnd.google-apps.folder' and '" + paiId + "' in parents and trashed=false", 'id,createdTime');
+    achados.sort(function (x, y) { return (x.createdTime || '') < (y.createdTime || '') ? -1 : 1; });
     if (achados.length) return achados[0].id;
     var nova = await api(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: nome, mimeType: 'application/vnd.google-apps.folder', parents: [paiId] }) });
     return nova.id;
@@ -880,7 +915,7 @@
   function planoLixeira() {
     var gs = {};
     (D.itens || []).forEach(function (d) {
-      if (d.site && d.k) (gs[d.k] = gs[d.k] || []).push(d);
+      if (d.site && d.k && !d.semPerm) (gs[d.k] = gs[d.k] || []).push(d);
     });
     var out = [];
     Object.keys(gs).forEach(function (k) {
@@ -908,6 +943,7 @@
     D.ocupado = true;
     var certas = 0;
     var falhas = 0;
+    var semPerm = 0;
     var idsOk = {};
     try {
       for (var g = 0; g < plano.length; g++) {
@@ -916,12 +952,13 @@
           D.msg = 'Mandando para a lixeira ' + (certas + falhas + 1) + ' de ' + total + '... (não feche esta página)';
           desenhar();
           try {
-            await api(API + '/' + encodeURIComponent(d.id) + '?fields=id', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ trashed: true }) });
+            await api(API + '/' + encodeURIComponent(d.id) + '?fields=id&supportsAllDrives=true', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ trashed: true }) });
             idsOk[d.id] = true;
             certas++;
           } catch (e1) {
             if (!D.token) throw e1;
-            falhas++;
+            // 403/404: o site só mexe em arquivos que ele mesmo criou. Os outros você apaga pelo Drive.
+            if (e1.status === 403 || e1.status === 404) { d.semPerm = true; semPerm++; } else { falhas++; }
           }
         }
       }
@@ -934,7 +971,7 @@
     }
     D.itens = D.itens.filter(function (d) { return !idsOk[d.id]; });
     D.ocupado = false;
-    var texto = 'Mandei ' + certas + ' cópia(s) para a lixeira do Drive.' + (falhas ? ' ' + falhas + ' não deu certo. Clique no botão de novo para tentar essas.' : '');
+    var texto = 'Mandei ' + certas + ' cópia(s) para a lixeira do Drive.' + (falhas ? ' ' + falhas + ' não deu certo. Clique no botão de novo para tentar essas.' : '') + (semPerm ? ' ' + semPerm + ' cópia(s) o site não tem permissão para mexer (foram colocadas na pasta por fora do site). Apague essas pelo próprio Drive: veja a lista "Repetidas com arquivos fora da pasta".' : '');
     if (certas > 0 && estado.arquivos.length && !quieto) {
       await enviarParaDrive();
       D.msg = texto + ' ' + D.msg;
@@ -1009,7 +1046,7 @@
 
   function linhaDrive(d) {
     var l = el('div', null, 'linha-simples');
-    l.appendChild(document.createTextNode((d.site ? '[pasta do site] ' : '[fora do site] ') + (d.p ? d.p + '/' : '') + d.fn + ' (' + (d.t / 1048576).toFixed(1) + ' MB)  '));
+    l.appendChild(document.createTextNode((d.semPerm ? '[sem permissão do site] ' : (d.site ? '[pasta do site] ' : '[fora do site] ')) + (d.p ? d.p + '/' : '') + d.fn + ' (' + (d.t / 1048576).toFixed(1) + ' MB)  '));
     var a = el('a', 'abrir no Drive');
     a.href = 'https://drive.google.com/file/d/' + encodeURIComponent(d.id) + '/view';
     a.target = '_blank';
@@ -1123,7 +1160,7 @@
       }));
       // Repetidas que envolvem arquivos FORA da pasta do site: o site não mexe, você apaga pelo Drive.
       var fora = Object.keys(gd).filter(function (k) {
-        return gd[k].length > 1 && gd[k].some(function (d) { return !d.site; });
+        return gd[k].length > 1 && gd[k].some(function (d) { return !d.site || d.semPerm; });
       }).sort(function (a, b) { return gd[b].length - gd[a].length; });
       caixaL.appendChild(recolhivel('fora', 'Repetidas com arquivos fora da pasta "' + PASTA_RAIZ + '"', fora.length, function (corpo) {
         if (!fora.length) { corpo.appendChild(el('div', 'Nenhuma.', 'linha-simples mu')); return; }
@@ -1384,7 +1421,7 @@
   // ---------- Montar a tela ----------
 
   var PARA_QUE = {
-    repetidas: { o: 'Músicas que aparecem mais de uma vez na pasta que você escolheu (mesmo nome e mesmo tamanho).', f: 'Só confira. Aqui nada é apagado. Para limpar as repetidas no Drive, vá na aba Google Drive.' },
+    repetidas: { o: 'Músicas que aparecem mais de uma vez na pasta que você escolheu (mesmo nome, mesmo que o tamanho seja diferente; a linha mostra o tamanho da maior).', f: 'Só confira. Aqui nada é apagado. Para limpar as repetidas no Drive, vá na aba Google Drive.' },
     top: { o: 'As 200 músicas mais tocadas agora (fonte: Deezer), por gênero. O site marca as que você já tem.', f: 'Escolha o gênero, escolha a lista e veja o que falta. Se quiser, crie uma playlist no YouTube mais abaixo.' },
     novidades: { o: 'O que entrou e o que saiu das listas Top 200 desde a última atualização (feita todo dia).', f: 'Nada a fazer: é só para ver o que há de novo.' },
     drive: { o: 'Aqui você manda as músicas do PC para o seu Google Drive, sem repetir.', f: 'Entre com o Google e siga os passos de 1 a 4, de cima para baixo.' },
@@ -1458,6 +1495,7 @@
       estado.pastaNome = pasta.name;
       estado.cache = {};
       estado.b = lista.map(function (m) { return m.b; });
+      memoTenho = {};
       salvar();
       estado.aviso = '';
       if (!lista.length) UI.msg('Não achei nenhuma música na pasta ' + pasta.name + ' (' + stats.pastas + ' pasta(s) lida(s)). Escolha a pasta que tem os arquivos de música, como mp3 ou m4a.' + (function () {
