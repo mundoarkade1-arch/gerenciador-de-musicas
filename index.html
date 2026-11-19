@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' https://accounts.google.com/gsi/style; script-src 'self' https://accounts.google.com/gsi/client; connect-src https://www.googleapis.com https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; img-src data:;">
 <title>Gerenciador de Músicas</title>
-<link rel="stylesheet" href="style.css?v=20261118b">
+<link rel="stylesheet" href="style.css?v=20261118d">
 </head>
 <body>
 
@@ -28,11 +28,14 @@
     </div>
   </header>
 
+  <!-- EXPLICAÇÃO EM UMA FRASE -->
+  <p class="intro"><b>O que este site faz:</b> pega as músicas do seu computador e guarda no seu Google Drive, sem repetir. São só 3 passos, e o site mostra qual é o próximo.</p>
+
   <!-- PASSO A PASSO (sempre visível) -->
   <ol id="passosTopo" class="passos" aria-label="Passo a passo">
-    <li data-n="1" data-estado="agora"><b>1</b><span>Escolher a pasta<small>das músicas no seu PC</small></span></li>
-    <li data-n="2" data-estado="depois"><b>2</b><span>Entrar com o Google<small>para o site ver o seu Drive</small></span></li>
-    <li data-n="3" data-estado="depois"><b>3</b><span>Atualizar tudo<small>sobe, limpa e organiza</small></span></li>
+    <li data-n="1" data-estado="agora"><b>1</b><span>Escolher a pasta<small>onde estão as músicas no PC</small></span></li>
+    <li data-n="2" data-estado="depois"><b>2</b><span>Entrar com o Google<small>é onde elas vão ficar guardadas</small></span></li>
+    <li data-n="3" data-estado="depois"><b>3</b><span>Atualizar tudo<small>o site faz o resto sozinho</small></span></li>
   </ol>
 
   <!-- 2. CARTÃO PRINCIPAL: o que fazer agora -->
@@ -60,22 +63,25 @@
   <!-- 3. NÚMEROS -->
   <div id="numeros" class="numeros" hidden></div>
 
-  <!-- 4. ABAS -->
-  <p class="dica-abas">Clique numa aba para trocar de assunto:</p>
-  <nav class="abas" aria-label="Seções">
-    <button type="button" data-aba="repetidas" aria-current="true">Repetidas no PC</button>
-    <button type="button" data-aba="top">Top 200</button>
-    <button type="button" data-aba="novidades">Novidades</button>
-    <button type="button" data-aba="drive">Google Drive</button>
-    <button type="button" data-aba="motor">Motor do PC (avançado)</button>
-  </nav>
-  <section class="paraque" aria-live="polite">
-    <p><b>O que é isto?</b> <span id="paraque"></span></p>
-    <p><b>O que eu faço aqui?</b> <span id="comofazer"></span></p>
-  </section>
+  <!-- 4. EXTRAS (fechado no começo: não é preciso para o básico) -->
+  <details id="extras" class="extras">
+    <summary><span>Mais opções</span><small>Ver repetidas, músicas mais tocadas, playlists… (opcional)</small></summary>
+    <p class="dica-abas">Clique numa aba para trocar de assunto:</p>
+    <nav class="abas" aria-label="Seções">
+      <button type="button" data-aba="repetidas" aria-current="true">Repetidas no PC</button>
+      <button type="button" data-aba="top">Mais tocadas</button>
+      <button type="button" data-aba="novidades">Novidades</button>
+      <button type="button" data-aba="drive">Drive (manual)</button>
+      <button type="button" data-aba="motor">Avançado</button>
+    </nav>
+    <section class="paraque" aria-live="polite">
+      <p><b>O que é isto?</b> <span id="paraque"></span></p>
+      <p><b>O que eu faço aqui?</b> <span id="comofazer"></span></p>
+    </section>
 
-  <!-- 5. CONTEÚDO DA ABA -->
-  <main id="conteudo"></main>
+    <!-- 5. CONTEÚDO DA ABA -->
+    <main id="conteudo"></main>
+  </details>
 
   <footer class="rodape">
     <button id="botaoHistorico" class="link" type="button">Ver os últimos avisos do site</button>
@@ -83,9 +89,9 @@
 </div>
 
 <noscript><p class="vazio">Este site precisa do JavaScript ligado no navegador.</p></noscript>
-<script src="ui.js?v=20261118b"></script>
-<script src="data/charts.js?v=20261118b"></script>
-<script src="youtube.js?v=20261118b"></script>
-<script src="app.js?v=20261118b"></script>
+<script src="ui.js?v=20261118d"></script>
+<script src="data/charts.js?v=20261118d"></script>
+<script src="youtube.js?v=20261118d"></script>
+<script src="app.js?v=20261118d"></script>
 </body>
 </html>

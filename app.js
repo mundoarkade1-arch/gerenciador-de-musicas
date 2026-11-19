@@ -212,11 +212,11 @@
     if (!estado.b.length) { n.hidden = true; return; }
     n.hidden = false;
     var g = estado.arquivos.length ? grupos() : null;
-    var data = CH.atualizado ? new Date(CH.atualizado).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '—';
+    var noDrive = D.itens ? D.itens.filter(function (d) { return d.site; }).length : null;
     n.appendChild(numero(estado.b.length.toLocaleString('pt-BR'), 'músicas na pasta'));
     n.appendChild(numero(g ? g.sobra.toLocaleString('pt-BR') : '—', 'repetidas', !!(g && g.sobra)));
-    n.appendChild(numero(faltam == null ? '—' : faltam.toLocaleString('pt-BR'), 'faltam subir'));
-    n.appendChild(numero(data, 'listas atualizadas'));
+    n.appendChild(numero(faltam == null ? '—' : faltam.toLocaleString('pt-BR'), 'faltam enviar'));
+    n.appendChild(numero(noDrive == null ? '—' : noDrive.toLocaleString('pt-BR'), 'já estão no Drive'));
   }
 
 
@@ -237,8 +237,8 @@
     var g = grupos();
     if (!g.lista.length) { c.appendChild(vazio('Não achei nenhuma música repetida.')); return; }
     var cal = el('div', null, 'callout');
-    cal.appendChild(el('p', 'Esta lista só mostra as repetidas do seu computador. Nada é apagado daqui. Para limpar as repetidas que já estão no Drive, use a aba Google Drive.'));
-    var ir = el('button', 'Ir para a aba Google Drive', 'btn-s');
+    cal.appendChild(el('p', 'Esta lista só mostra as repetidas do seu computador. Nada é apagado daqui. Para limpar as repetidas que já estão no Drive, use o botão "Atualizar tudo" lá em cima, ou a aba Drive (manual).'));
+    var ir = el('button', 'Abrir a aba Drive (manual)', 'btn-s');
     ir.type = 'button';
     ir.onclick = function () { estado.aba = 'drive'; desenhar(true); var ab = document.querySelector('.abas'); if (ab) ab.scrollIntoView(); };
     cal.appendChild(ir);
@@ -1107,7 +1107,7 @@
       if (estado.arquivos.length) {
         faltam = faltamSubir();
         var jaTem = estado.arquivos.filter(function (m) { return noSite[m.k]; }).length;
-        sit.appendChild(el('p', jaTem + ' já estão na pasta "' + PASTA_RAIZ + '". ' + faltam.length + ' ainda faltam subir.', 'situacao'));
+        sit.appendChild(el('p', jaTem + ' já estão na pasta "' + PASTA_RAIZ + '". ' + faltam.length + ' ainda faltam enviar.', 'situacao'));
       } else {
         sit.appendChild(el('p', 'Na pasta "' + PASTA_RAIZ + '" do Drive há ' + nSite + ' músicas. Escolha a pasta do PC para comparar.', 'situacao'));
       }
@@ -1118,7 +1118,7 @@
 
     // (b) Passo a passo: os 4 passos sempre aparecem, na ordem certa. Os que não dá para usar ficam cinza, com o motivo.
     if (D.token) {
-      var ac = secao(c, 'Passo a passo: faça de cima para baixo');
+      var ac = secao(c, 'Controle manual: um passo de cada vez (de cima para baixo)');
       var caixaAc = el('div', null, 'lista');
       var lido = !!D.itens;
       var temPasta = estado.arquivos.length > 0;
@@ -1421,10 +1421,10 @@
   // ---------- Montar a tela ----------
 
   var PARA_QUE = {
-    repetidas: { o: 'Músicas que aparecem mais de uma vez na pasta que você escolheu (mesmo nome, mesmo que o tamanho seja diferente; a linha mostra o tamanho da maior).', f: 'Só confira. Aqui nada é apagado. Para limpar as repetidas no Drive, vá na aba Google Drive.' },
+    repetidas: { o: 'Músicas com o mesmo nome que aparecem mais de uma vez na pasta que você escolheu. A linha mostra o tamanho da maior.', f: 'Só para conferir: nada é apagado do seu computador. A limpeza no Drive é feita pelo botão "Atualizar tudo", lá em cima.' },
     top: { o: 'As 200 músicas mais tocadas agora (fonte: Deezer), por gênero. O site marca as que você já tem.', f: 'Escolha o gênero, escolha a lista e veja o que falta. Se quiser, crie uma playlist no YouTube mais abaixo.' },
-    novidades: { o: 'O que entrou e o que saiu das listas Top 200 desde a última atualização (feita todo dia).', f: 'Nada a fazer: é só para ver o que há de novo.' },
-    drive: { o: 'Aqui você manda as músicas do PC para o seu Google Drive, sem repetir.', f: 'Entre com o Google e siga os passos de 1 a 4, de cima para baixo.' },
+    novidades: { o: 'O que entrou e o que saiu das listas de músicas mais tocadas desde a última atualização (feita todo dia).', f: 'Nada a fazer: é só para ver o que há de novo.' },
+    drive: { o: 'Os mesmos passos do botão "Atualizar tudo", mas um de cada vez, para quem quer controlar cada etapa.', f: 'Normalmente você não precisa desta aba. Se usar, entre com o Google e siga os passos de 1 a 4, de cima para baixo.' },
     motor: { o: 'Área avançada. Mostra o que o programa do PC (Toxic Engine) descobriu: quais músicas das listas ainda faltam na sua biblioteca.', f: 'Só use se você roda esse programa no PC. Entre com o Google e clique em \"Ler o motor\". Aqui o site só lê.' }
   };
 

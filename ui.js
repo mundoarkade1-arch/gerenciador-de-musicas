@@ -369,16 +369,16 @@
 
   // ---------- Cartão principal ("hero") ----------
   var TEXTOS = {
-    1: { eb: 'Passo 1 de 3', t: 'Escolha a pasta.', p: 'Onde estão as músicas no seu computador.', b: 'Escolher pasta das músicas', s: 'Só lê. Não muda nada na pasta.' },
-    2: { eb: 'Passo 2 de 3', t: 'Entre com o Google.', p: 'Para o site enxergar o seu Drive. Ele nunca vê a sua senha.', b: 'Entrar com Google', s: 'Só lê o seu Drive.' },
-    3: { eb: 'Passo 3 de 3 · tudo pronto', t: 'Atualizar tudo.', p: 'Um clique faz os 4 passos ao lado, em ordem.', b: 'Atualizar tudo', s: 'Nada é apagado de vez. A lixeira só com a sua confirmação.' }
+    1: { eb: 'Passo 1 de 3', t: 'Escolha a pasta.', p: 'Clique no botão e escolha a pasta do seu computador onde estão as músicas (pode ter subpastas).', b: 'Escolher pasta das músicas', s: 'Seguro: o site só lê a pasta. Não muda nem apaga nada nela.' },
+    2: { eb: 'Passo 2 de 3', t: 'Entre com o Google.', p: 'É no seu Google Drive que as músicas vão ficar guardadas. Uma janela do Google vai abrir para você entrar.', b: 'Entrar com Google', s: 'O site nunca vê a sua senha.' },
+    3: { eb: 'Passo 3 de 3 · tudo pronto', t: 'Atualizar tudo.', p: 'Um clique e o site faz as 4 etapas ao lado, em ordem. Você só confirma a limpeza das repetidas.', b: 'Atualizar tudo', s: 'Nada é apagado de vez. As repetidas vão para a lixeira do Drive, só depois que você confirmar.' }
   };
   // Os 4 passos do painel da direita.
   var LINHAS = [
-    { ico: 'documento', tag: 'Só lê', cls: 'ok', depois: 'Depois' },
-    { ico: 'subir', tag: 'Sobe arquivos', cls: '', depois: 'Depois' },
-    { ico: 'lixeira', tag: 'Lixeira', cls: 'verm', depois: 'Depois' },
-    { ico: 'atualizar', tag: 'Drive', cls: '', depois: 'Depois' }
+    { ico: 'documento', tag: 'Seguro', cls: 'ok', depois: 'Depois' },
+    { ico: 'subir', tag: 'Envia', cls: '', depois: 'Depois' },
+    { ico: 'lixeira', tag: 'Você confirma', cls: 'verm', depois: 'Depois' },
+    { ico: 'atualizar', tag: 'Celular', cls: '', depois: 'Depois' }
   ];
   var refs = [];
   function montarPlano() {
@@ -458,8 +458,8 @@
     }
     var antes = $('botaoAntes');
     antes.hidden = !(passo === 1 && !rodando && d.antes);
-    $('botaoGoogle').hidden = !(passo === 1 && !rodando && !d.google);
-    if (!antes.hidden) antes.textContent = 'Usar a pasta de antes (' + d.antes.nome + ')';
+    $('botaoGoogle').hidden = true; // um botão só por vez: o site já mostra o próximo passo
+    if (!antes.hidden) antes.textContent = 'Usar a mesma pasta de antes: ' + d.antes.nome;
 
     // Lado direito: o plano
     $('plano').className = 'plano' + (!rodando && passo < 3 ? ' apagado' : '');
@@ -471,24 +471,24 @@
       R.li.setAttribute('data-estado', est);
       var tit, det, tag = L.tag, cls = L.cls, ico = L.ico, pct = null;
       if (i === 0) {
-        tit = 'Ler o Drive'; det = 'Vê o que já está na pasta “Músicas do Site”';
+        tit = 'Ver o que já está no Drive'; det = 'Só olha a pasta “Músicas do Site”. Não muda nada';
         if (est === 'feito') { tit = 'Drive lido'; det = ndr != null ? plural(ndr, 'música encontrada', 'músicas encontradas') : ''; }
         if (est === 'agora') { tit = 'Lendo o Drive'; det = a.arquivo || 'Pode demorar um pouco'; }
       } else if (i === 1) {
-        tit = d.nSubir == null ? 'Subir as músicas que faltam' : (d.nSubir === 0 ? 'Nada para subir' : 'Subir ' + plural(d.nSubir, 'música', 'músicas'));
-        det = 'As que ainda faltam, só uma cópia de cada';
+        tit = d.nSubir == null ? 'Enviar as músicas que faltam' : (d.nSubir === 0 ? 'Nada para enviar' : 'Enviar ' + plural(d.nSubir, 'música', 'músicas'));
+        det = 'Envia para o Drive só as que ainda não estão lá (uma cópia de cada)';
         if (est === 'feito') { tit = 'Músicas enviadas'; det = 'Pasta “Músicas do Site” em dia'; }
         if (est === 'agora') { tit = a.titulo || 'Subindo'; det = a.arquivo; pct = a.pct; }
       } else if (i === 2) {
         tit = d.nLixo == null ? 'Limpar as repetidas' : (d.nLixo === 0 ? 'Nenhuma repetida para limpar' : 'Limpar ' + plural(d.nLixo, 'repetida', 'repetidas'));
-        det = est === 'depois' ? 'Pede a sua confirmação' : 'Fica a maior; você confirma antes';
+        det = est === 'depois' ? 'O site mostra a lista e espera o seu OK' : 'Fica a maior; você confirma antes';
         if (est === 'feito') { tit = 'Repetidas limpas'; det = 'Foram para a lixeira do Drive'; }
         if (est === 'agora') {
           if (a.confirmando) { tit = 'Esperando você confirmar'; det = 'Confira a janela na tela'; }
           else { tit = a.titulo || 'Mandando para a lixeira'; det = a.arquivo; pct = a.pct; }
         }
       } else {
-        tit = 'Atualizar as playlists'; det = 'Arquivo para o app do celular';
+        tit = 'Atualizar as playlists do celular'; det = 'Só serve se você usa o app Toxic Player';
         if (est === 'feito') { tit = 'Playlists atualizadas'; det = 'No seu Drive'; }
         if (est === 'agora') { tit = 'Enviando as playlists'; det = 'Para o seu Drive'; }
       }
@@ -510,16 +510,19 @@
   UI.ajuda = function () {
     var c = el('div', null, 'ajuda');
     function p(forte, texto) { var x = el('p'); x.appendChild(el('b', forte)); x.appendChild(document.createTextNode(' ' + texto)); c.appendChild(x); }
+    c.appendChild(el('h3', 'Em uma frase'));
+    p('O que o site faz:', 'pega as músicas do seu computador e guarda no seu Google Drive, sem repetir.');
     c.appendChild(el('h3', 'Passo a passo'));
     p('1. Escolha a pasta.', 'Clique no botão vermelho grande e escolha a pasta onde estão as músicas no seu computador. O site só LÊ a pasta: não muda nem apaga nada nela.');
     p('2. Entre com o Google.', 'Para o site enxergar o seu Google Drive. Ele nunca vê a sua senha.');
     p('3. Clique em "Atualizar tudo".', 'O site faz sozinho, em ordem: lê o Drive, sobe as músicas que faltam (uma cópia de cada), manda as repetidas para a lixeira do Drive (só depois de você confirmar) e atualiza o arquivo de playlists.');
-    c.appendChild(el('h3', 'O que são as abas'));
+    c.appendChild(el('h3', 'Mais opções (opcional)'));
+    p('Você não precisa disto para o básico.', 'Fica fechado no fim da página. Abra só se quiser algo extra:');
     p('Repetidas no PC:', 'músicas que aparecem mais de uma vez na sua pasta. Só mostra, não apaga.');
-    p('Top 200:', 'as músicas mais tocadas agora, por gênero, com a marca do que você já tem. Daqui também dá para criar uma playlist no YouTube.');
-    p('Novidades:', 'o que entrou e o que saiu das listas Top 200.');
-    p('Google Drive:', 'os passos 1 a 4 para subir músicas, limpar repetidas e gerar playlists.');
-    p('Motor do PC:', 'área avançada, só para quem usa o programa Toxic Engine no computador.');
+    p('Mais tocadas:', 'as músicas mais tocadas agora (Top 200), com a marca do que você já tem. Daqui também dá para criar uma playlist no YouTube.');
+    p('Novidades:', 'o que entrou e o que saiu dessas listas.');
+    p('Drive (manual):', 'os mesmos passos do botão "Atualizar tudo", mas um de cada vez.');
+    p('Avançado:', 'só para quem usa o programa Toxic Engine no computador.');
     c.appendChild(el('h3', 'Palavras que aparecem no site'));
     p('Drive:', 'o seu espaço na internet no Google, onde ficam as músicas guardadas.');
     p('Lixeira do Drive:', 'as repetidas não somem de vez: ficam na lixeira por 30 dias e dá para recuperar.');

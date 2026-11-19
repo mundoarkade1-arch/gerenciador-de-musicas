@@ -359,3 +359,24 @@ details > summary::-webkit-details-marker { display: none; }
   .dica-abas { margin-top: 32px; }
   .paraque { padding: 14px 16px; }
 }
+
+
+/* ---------- Texto de apresentação e "Mais opções" ---------- */
+.intro { margin: 0 0 20px; padding: 14px 18px; background: var(--s1); border: 1px solid var(--bd); border-radius: var(--rd-l); color: var(--tx); font-size: 16px; }
+.intro b { color: var(--rt); }
+.extras { margin-top: 40px; border: 1px solid var(--bd); border-radius: var(--rd-l); background: var(--s1); }
+.extras > summary { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 18px 24px; min-height: 60px; font-weight: 600; border-radius: var(--rd-l); }
+.extras > summary:hover { background: var(--s2); }
+.extras > summary small { font-weight: 400; font-size: 14px; color: var(--mu); }
+.extras > summary::after { content: ""; width: 8px; height: 8px; margin-left: auto; border-right: 2px solid var(--mu); border-bottom: 2px solid var(--mu); transform: rotate(45deg); flex: none; }
+.extras[open] > summary::after { transform: rotate(225deg); }
+.extras[open] > summary { border-bottom: 1px solid var(--bd); border-radius: var(--rd-l) var(--rd-l) 0 0; }
+.extras > .dica-abas { margin-top: 20px; padding: 0 24px; }
+.extras > .abas, .extras > .paraque, .extras > main { margin-left: 24px; margin-right: 24px; }
+.extras > main { padding-bottom: 24px; }
+@media (max-width: 720px) {
+  .extras > summary { padding: 16px 18px; }
+  .extras > .dica-abas { padding: 0 18px; }
+  .extras > .abas, .extras > .paraque, .extras > main { margin-left: 16px; margin-right: 16px; }
+}
+.extras > .abas { margin-top: 8px; }
