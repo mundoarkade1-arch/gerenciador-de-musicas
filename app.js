@@ -1460,7 +1460,10 @@
       estado.b = lista.map(function (m) { return m.b; });
       salvar();
       estado.aviso = '';
-      if (!lista.length) UI.msg('Não achei nenhuma música na pasta ' + pasta.name + ' (' + stats.pastas + ' pasta(s) lida(s)). Escolha a pasta que tem os arquivos de música, como mp3 ou m4a.');
+      if (!lista.length) UI.msg('Não achei nenhuma música na pasta ' + pasta.name + ' (' + stats.pastas + ' pasta(s) lida(s)). Escolha a pasta que tem os arquivos de música, como mp3 ou m4a.' + (function () {
+        var t = Object.keys(stats.ignorados).sort(function (a, b) { return stats.ignorados[b] - stats.ignorados[a]; }).slice(0, 6);
+        return t.length ? ' O que tem nessa pasta: ' + t.map(function (x) { return x + ' (' + stats.ignorados[x] + ')'; }).join(', ') + '.' : ' A pasta está vazia.';
+      })());
       else UI.msg(resumo(pasta.name, lista.length, stats));
       desenhar();
     } catch (e2) {
