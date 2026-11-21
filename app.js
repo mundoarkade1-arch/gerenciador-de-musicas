@@ -762,15 +762,23 @@
     return okLer;
   }
 
+  // Põe o número (id) do Drive em cada faixa das playlists.
+  // Acha a música pelo nome limpo e sem ligar para a ordem das palavras. Assim, a mesma música que está em
+  // duas pastas do PC (mesmo com nomes um pouco diferentes) entra nas duas playlists, usando a cópia que subiu.
   function playlistsComId() {
-    var mapa = {};
+    var porChave = {};
+    var porNome = {};
     D.itens.forEach(function (d) {
+      var o = oDe(d);
+      if (o && (!porChave[o] || d.site)) porChave[o] = d.id;
       var ch = d.fn.toLowerCase();
-      if (!mapa[ch] || d.site) mapa[ch] = d.id;
+      if (!porNome[ch] || d.site) porNome[ch] = d.id;
     });
     return todasPlaylists().map(function (p) {
       p.faixas = p.faixas.map(function (f) {
-        var id = mapa[f.fn.toLowerCase()];
+        var i = f.fn.lastIndexOf('.');
+        var sem = i < 0 ? f.fn : f.fn.slice(0, i);
+        var id = porChave[chaveOrdem(chaveNome(sem, false))] || porNome[f.fn.toLowerCase()];
         return id ? Object.assign({ id: id }, f) : f;
       });
       return p;
@@ -810,19 +818,55 @@
 
   // ---------- Google Drive: subir as músicas que faltam ----------
 
+  // Chave que não liga para a ordem das palavras: "Numb - Linkin Park" e "Linkin Park - Numb" dão a mesma.
+  // Fica guardada no próprio item (campo "o") para não refazer a conta toda hora.
+  function chaveOrdem(k) { return (k || '').split(' ').filter(Boolean).sort().join(' '); }
+  function oDe(x) { if (x.o === undefined) x.o = chaveOrdem(x.k); return x.o; }
+
+  // Nome de cantor para comparar: sem acento, sem símbolos e sem "e", "x", "and" ("Henrique e Juliano" = "Henrique & Juliano").
+  function nomeDeCantor(s) {
+    return limpar(s, true).split(' ').filter(function (w) { return w && w !== 'e' && w !== 'x' && w !== 'and'; }).join(' ');
+  }
+
+  // A música está numa pasta com o nome do cantor? (ex.: "Artistas/Linkin Park/...")
+  function naPastaDoCantor(m) {
+    var p = pastaDoArquivo(m.c);
+    var pk = nomeDeCantor(p.slice(p.lastIndexOf('/') + 1));
+    if (!pk) return false;
+    var n = lerNome(m);
+    if (n.as && n.as.length) return n.as.some(function (a) { return nomeDeCantor(a) === pk; });
+    return (' ' + nomeDeCantor(m.b) + ' ').indexOf(' ' + pk + ' ') >= 0;
+  }
+
+  // Mesma música em várias pastas do PC: escolhe qual cópia sobe.
+  // Só entram as cópias de tamanho parecido com a maior (até 2% menores). Entre elas, a da pasta do cantor ganha.
+  // Se ainda sobrar mais de uma, vale a primeira em ordem de nome da pasta (sempre a mesma, não muda a cada vez).
+  function escolherCopia(grupo) {
+    if (grupo.length === 1) return grupo[0];
+    var maior = Math.max.apply(null, grupo.map(function (m) { return m.t; }));
+    var perto = grupo.filter(function (m) { return m.t >= maior * 0.98; });
+    var doCantor = perto.filter(naPastaDoCantor);
+    var lista = doCantor.length ? doCantor : perto;
+    lista.sort(function (a, b) { return a.c < b.c ? -1 : (a.c > b.c ? 1 : 0); });
+    return lista[0];
+  }
+
   function faltamSubir() {
     if (!D.itens) return [];
     var noDrive = {};
-    D.itens.forEach(function (d) { if (d.site) noDrive[d.k] = true; });
-    // Se a mesma música está em duas pastas do PC, sobe só uma cópia: a maior.
-    var melhor = {};
+    D.itens.forEach(function (d) { if (d.site) noDrive[oDe(d)] = true; });
+    // Se a mesma música está em duas pastas do PC, sobe só uma cópia. As outras pastas continuam
+    // com a música nas playlists, porque o arquivo de playlists aponta para essa cópia (veja playlistsComId).
+    var grupos = {};
     estado.arquivos.forEach(function (m) {
-      if (m.k && !noDrive[m.k] && (!melhor[m.k] || m.t > melhor[m.k].t)) melhor[m.k] = m;
+      if (m.k && !noDrive[oDe(m)]) (grupos[oDe(m)] = grupos[oDe(m)] || []).push(m);
     });
+    var melhor = {};
+    Object.keys(grupos).forEach(function (k) { melhor[k] = escolherCopia(grupos[k]); });
     return estado.arquivos.filter(function (m) {
       if (!m.h) return false;
       if (!m.k) return true;
-      return melhor[m.k] === m;
+      return melhor[oDe(m)] === m;
     });
   }
 
@@ -1101,12 +1145,12 @@
     var totalLixo = 0;
     if (D.itens) {
       D.itens.forEach(function (d) {
-        if (d.site) { noSite[d.k] = true; nSite++; }
+        if (d.site) { noSite[oDe(d)] = true; nSite++; }
         if (d.k) (gd[d.k] = gd[d.k] || []).push(d);
       });
       if (estado.arquivos.length) {
         faltam = faltamSubir();
-        var jaTem = estado.arquivos.filter(function (m) { return noSite[m.k]; }).length;
+        var jaTem = estado.arquivos.filter(function (m) { return noSite[oDe(m)]; }).length;
         sit.appendChild(el('p', jaTem + ' já estão na pasta "' + PASTA_RAIZ + '". ' + faltam.length + ' ainda faltam enviar.', 'situacao'));
       } else {
         sit.appendChild(el('p', 'Na pasta "' + PASTA_RAIZ + '" do Drive há ' + nSite + ' músicas. Escolha a pasta do PC para comparar.', 'situacao'));
