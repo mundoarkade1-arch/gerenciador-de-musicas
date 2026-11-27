@@ -1,5 +1,5 @@
-/* ui.js — parte VISUAL do site: faixa de aviso, cartão principal, janelas, tema.
-   Não mexe no Drive nem nas músicas. O app.js chama UI.msg(...), UI.confirmar(...) e UI.hero(...).
+/* ui.js — parte VISUAL do site: faixa de aviso, painel principal, janelas, tema.
+   Não mexe no Drive nem nas músicas. O app.js chama UI.msg(...), UI.confirmar(...), UI.janela(...) e UI.painel(...).
    Sem animações: tudo muda na hora. O único movimento é a barra de progresso crescendo. */
 (function () {
   'use strict';
@@ -50,9 +50,9 @@
   UI.andamento = novoAndamento();
   function mudou() { if (UI.aoMudar) UI.aoMudar(); }
 
-  // ---------- Tema (escuro é o padrão; claro é opcional) ----------
-  var tema = 'escuro';
-  try { if (localStorage.getItem('gm_tema2') === 'claro') tema = 'claro'; } catch (e) { /* sem problema */ }
+  // ---------- Tema (claro é o padrão; escuro é opcional) ----------
+  var tema = 'claro';
+  try { if (localStorage.getItem('gm_tema3') === 'escuro') tema = 'escuro'; } catch (e) { /* sem problema */ }
   document.documentElement.setAttribute('data-tema', tema);
 
   // ---------- Que tipo de mensagem é? ----------
@@ -60,7 +60,7 @@
   var ERRO_MEIO = /(Deu erro|Parou depois|O Google respondeu)/;
   function tipoDe(t) {
     if (ERRO_INICIO.test(t) || ERRO_MEIO.test(t)) return 'erro';
-    if (/^(Subindo|Mandando para a lixeira|Lendo|Enviando|Atualizando|Preparando)/.test(t)) return 'prog';
+    if (/^(Subindo|Mandando para a lixeira|Lendo|Enviando|Atualizando|Preparando|Conferindo)/.test(t)) return 'prog';
     if (/^(Para ler a pasta|Não|Clique|Escolha|Escreva)/.test(t)) return 'aviso';
     if (/^(Pronto|Subi|Mandei|Conectado)/.test(t)) return 'ok';
     return 'info';
@@ -72,6 +72,7 @@
     if (/^(Preparando a pasta|Subindo)/.test(t)) return 1;
     if (/^Mandando para a lixeira/.test(t)) return 2;
     if (/^Enviando para o YouTube/.test(t)) return 'yt';
+    if (/^Conferindo/.test(t)) return 'dz';
     if (/^Enviando/.test(t)) return 3;
     if (/^Lendo as músicas/.test(t)) return 'pasta';
     return null; // "Atualizando tudo..." não muda a etapa
@@ -92,7 +93,7 @@
   UI.fecharFaixa = limparFaixa;
 
   var ICONE_TIPO = { erro: 'alerta', ok: 'check', aviso: 'alerta', info: 'info' };
-  var ICONE_ETAPA = { 0: 'documento', 1: 'subir', 2: 'lixeira', 3: 'atualizar', pasta: 'pasta', yt: 'subir' };
+  var ICONE_ETAPA = { 0: 'documento', 1: 'subir', 2: 'lixeira', 3: 'atualizar', pasta: 'pasta', yt: 'subir', dz: 'atualizar' };
 
   // Faixa de progresso: atualiza no mesmo lugar (não recria a cada arquivo).
   function faixaProgresso(a) {
@@ -264,7 +265,9 @@
   UI.limparResumo = function () { var r = $('resumo'); esvaziar(r); r.hidden = true; };
 
   // ---------- Janela (foco preso, Esc, clique explícito) ----------
-  // opc: { titulo, intro, corpo (nó), aviso, botoes: [{rotulo, vermelho, valor}], esc }
+  // opc: { titulo, intro, corpo (nó), aviso, botoes: [{rotulo, principal, valor}], esc }
+  var fecharAtual = null;
+  UI.fecharJanela = function (r) { if (fecharAtual) fecharAtual(r); };
   function janela(opc) {
     return new Promise(function (resolve) {
       var antes = document.activeElement;
@@ -288,7 +291,7 @@
       }
       var barra = el('div', null, 'janela-botoes');
       var botoes = opc.botoes.map(function (b) {
-        var x = el('button', b.rotulo, b.vermelho ? 'btn-v' : 'btn-s');
+        var x = el('button', b.rotulo, b.principal ? 'btn-p' : 'btn-s');
         x.type = 'button';
         x.onclick = function () { fim(b.valor); };
         barra.appendChild(x);
@@ -298,8 +301,10 @@
       fundo.appendChild(m);
       document.body.appendChild(fundo);
       document.body.classList.add('travado');
-      botoes[0].focus();
+      (opc.foco ? opc.foco : botoes[0]).focus();
+      fecharAtual = fim;
       function fim(r) {
+        fecharAtual = null;
         document.removeEventListener('keydown', tecla, true);
         fundo.remove();
         document.body.classList.remove('travado');
@@ -309,7 +314,7 @@
       function tecla(e) {
         if (e.key === 'Escape') { e.preventDefault(); fim(opc.esc); }
         if (e.key === 'Tab') { // foco preso dentro da janela
-          var f = m.querySelectorAll('button');
+          var f = m.querySelectorAll('button, input, select, textarea, a[href]');
           var primeiro = f[0], ultimo = f[f.length - 1];
           if (e.shiftKey && document.activeElement === primeiro) { e.preventDefault(); ultimo.focus(); }
           else if (!e.shiftKey && document.activeElement === ultimo) { e.preventDefault(); primeiro.focus(); }
@@ -318,6 +323,8 @@
       document.addEventListener('keydown', tecla, true);
     });
   }
+
+  UI.janela = janela;
 
   function tamanho(t) { return (t / 1048576).toFixed(1).replace('.', ',') + ' MB'; }
 
@@ -333,7 +340,7 @@
       lista.appendChild(a);
       g.vai.forEach(function (v) {
         var b = el('div', null, 'lj');
-        b.appendChild(el('span', 'Lixeira', 'pilula verm'));
+        b.appendChild(el('span', 'Lixeira', 'pilula am'));
         b.appendChild(el('span', v, 'cam'));
         lista.appendChild(b);
       });
@@ -344,7 +351,7 @@
       intro: intro,
       corpo: lista,
       aviso: 'Nada é apagado de vez. Dá para recuperar pela lixeira do Drive por 30 dias.',
-      botoes: [{ rotulo: 'Cancelar', valor: false }, { rotulo: 'Mandar para a lixeira', vermelho: true, valor: true }],
+      botoes: [{ rotulo: 'Cancelar', valor: false }, { rotulo: 'Mandar para a lixeira', principal: true, valor: true }],
       esc: false
     });
     UI.andamento.confirmando = false;
@@ -367,176 +374,76 @@
     return janela({ titulo: 'Últimos avisos', corpo: ol, botoes: [{ rotulo: 'Fechar', valor: true }], esc: true });
   };
 
-  // ---------- Cartão principal ("hero") ----------
-  var TEXTOS = {
-    1: { eb: 'Passo 1 de 3', t: 'Escolha a pasta.', p: 'Clique no botão e escolha a pasta do seu computador onde estão as músicas (pode ter subpastas).', b: 'Escolher pasta das músicas', s: 'Seguro: o site só lê a pasta. Não muda nem apaga nada nela.' },
-    2: { eb: 'Passo 2 de 3', t: 'Entre com o Google.', p: 'É no seu Google Drive que as músicas vão ficar guardadas. Uma janela do Google vai abrir para você entrar.', b: 'Entrar com Google', s: 'O site nunca vê a sua senha.' },
-    3: { eb: 'Passo 3 de 3 · tudo pronto', t: 'Atualizar tudo.', p: 'Um clique e o site faz as 4 etapas ao lado, em ordem. Você só confirma a limpeza das repetidas.', b: 'Atualizar tudo', s: 'Nada é apagado de vez. As repetidas vão para a lixeira do Drive, só depois que você confirmar.' }
-  };
-  // Os 4 passos do painel da direita.
-  var LINHAS = [
-    { ico: 'documento', tag: 'Seguro', cls: 'ok', depois: 'Depois' },
-    { ico: 'subir', tag: 'Envia', cls: '', depois: 'Depois' },
-    { ico: 'lixeira', tag: 'Você confirma', cls: 'verm', depois: 'Depois' },
-    { ico: 'atualizar', tag: 'Celular', cls: '', depois: 'Depois' }
-  ];
-  var refs = [];
-  function montarPlano() {
-    var ol = $('plano');
-    LINHAS.forEach(function (L) {
-      var li = el('li', null, 'linha-plano');
-      var circ = el('span', null, 'circ');
-      var corpo = el('div', null, 'plano-corpo');
-      var t = el('b', null, 'plano-t');
-      var d = el('span', null, 'plano-d');
-      var barra = el('div', null, 'barra-mini');
-      var i = document.createElement('i');
-      barra.appendChild(i);
-      barra.hidden = true;
-      corpo.appendChild(t); corpo.appendChild(d); corpo.appendChild(barra);
-      var tag = el('span', null, 'pilula');
-      li.appendChild(circ); li.appendChild(corpo); li.appendChild(tag);
-      ol.appendChild(li);
-      refs.push({ li: li, circ: circ, t: t, d: d, barra: barra, i: i, tag: tag, ico: '' });
-    });
-  }
-
+  // ---------- Painel principal ----------
+  // d = { google, rodando, nDrive, nPlaylists, nSubir, nLixo, pcNome, antesNome, podePasta }
   function plural(n, um, varios) { return n + ' ' + (n === 1 ? um : varios); }
-
-  // d = { pasta, google, pastaNome, ocupado, tudo, nSubir, nLixo, nDrive, podePasta, antes }
-  UI.hero = function (d) {
+  UI.painel = function (d) {
     var a = UI.andamento;
-    var rodando = !!(a.ativo || a.confirmando || d.ocupado || d.tudo);
-    var passo = !d.pasta ? 1 : (!d.google ? 2 : 3);
-    var lendoPasta = rodando && a.etapa === 'pasta';
-    var noYt = rodando && a.etapa === 'yt';
-    var T = TEXTOS[lendoPasta ? 1 : (rodando ? 3 : passo)];
-    var hero = $('hero');
-    hero.setAttribute('data-passo', rodando ? (lendoPasta ? '1' : 'andamento') : String(passo));
-    // Faixa de passos no topo: feito / agora / depois
-    var passoAgora = lendoPasta ? 1 : (rodando ? 3 : passo);
-    document.querySelectorAll('#passosTopo li').forEach(function (li) {
-      var n = Number(li.getAttribute('data-n'));
-      li.setAttribute('data-estado', n < passoAgora ? 'feito' : (n === passoAgora ? 'agora' : 'depois'));
-    });
+    var rodando = !!(a.ativo || a.confirmando || d.rodando);
 
-    // Etiquetas do topo: só aparecem quando o passo foi feito.
-    function etiqueta(id, forte, resto, vale) {
-      var e = $(id);
-      e.hidden = !vale;
-      if (!vale || e.getAttribute('data-v') === resto) return;
-      esvaziar(e);
-      e.appendChild(icone('check'));
-      e.appendChild(el('b', forte));
-      e.appendChild(el('span', resto));
-      e.setAttribute('data-v', resto);
-    }
-    etiqueta('etqPasta', 'Pasta', d.pastaNome || '', d.pasta);
-    etiqueta('etqGoogle', 'Google', 'conectado', d.google);
+    var g = $('etqGoogle');
+    g.textContent = d.google ? 'Google: conectado' : 'Google: não conectado';
+    g.className = 'pilula ' + (d.google ? 'ok' : 'am');
 
-    // Lado esquerdo
-    if (rodando) {
-      $('heroEyebrow').textContent = lendoPasta ? 'Passo 1 de 3 · em andamento' : (noYt ? 'Playlist do YouTube · em andamento' : 'Passo 3 de 3 · em andamento');
-      $('heroTitulo').textContent = lendoPasta ? 'Lendo a pasta…' : (noYt ? 'Enviando…' : 'Atualizando…');
-      $('heroTexto').textContent = 'Pode deixar esta aba aberta. Eu aviso quando terminar.';
-    } else {
-      $('heroEyebrow').textContent = T.eb;
-      $('heroTitulo').textContent = T.t;
-      $('heroTexto').textContent = T.p;
-      if (passo === 1 && d.antes) { $('heroTitulo').textContent = 'Abra a sua pasta de músicas.'; $('heroTexto').textContent = 'O site lembra da pasta que você usou da última vez. Clique no botão e, se o Chrome perguntar, clique em Permitir.'; }
-      if (passo === 1 && !d.podePasta) $('heroTexto').textContent = 'Este navegador não consegue ler a pasta. Abra este site no Google Chrome ou no Microsoft Edge, no computador.';
-    }
-    $('heroSelo').textContent = T.s;
+    var info = $('etqDrive');
+    if (d.google && d.nDrive != null) info.textContent = 'No Drive: ' + plural(d.nDrive, 'música', 'músicas') + ' em ' + plural(d.nPlaylists || 0, 'playlist', 'playlists');
+    else info.textContent = d.google ? 'Drive: ainda não li' : '';
+
     var b = $('botaoPrincipal');
     esvaziar(b);
     if (rodando) {
-      b.appendChild(el('span', 'Não feche esta página'));
+      b.appendChild(el('span', 'Trabalhando… não feche esta página'));
       b.disabled = true;
+    } else if (!d.google) {
+      b.appendChild(el('span', 'Entrar com o Google'));
+      b.disabled = false;
     } else {
-      b.appendChild(el('span', (passo === 1 && d.antes) ? 'Usar a pasta de antes: ' + d.antes.nome : T.b));
-      if (passo === 3) b.appendChild(icone('seta'));
-      b.disabled = passo === 1 && !d.podePasta;
+      b.appendChild(el('span', 'Atualizar tudo'));
+      b.appendChild(icone('seta'));
+      b.disabled = false;
     }
-    var antes = $('botaoAntes');
-    antes.hidden = !(passo === 1 && !rodando && d.antes);
-    $('botaoGoogle').hidden = true; // um botão só por vez: o site já mostra o próximo passo
-    if (!antes.hidden) antes.textContent = 'Escolher outra pasta';
 
-    // Lado direito: o plano
-    $('plano').className = 'plano' + (!rodando && passo < 3 ? ' apagado' : '');
-    var idx = rodando ? (noYt ? null : lendoPasta ? -2 : (a.confirmando ? 2 : (typeof a.etapa === 'number' ? a.etapa : -1))) : null;
-    var ndr = d.nDrive;
-    for (var i = 0; i < 4; i++) {
-      var R = refs[i], L = LINHAS[i];
-      var est = idx === null ? 'parado' : (idx === -2 ? 'depois' : (i < idx ? 'feito' : (i === idx ? 'agora' : 'depois')));
-      R.li.setAttribute('data-estado', est);
-      var tit, det, tag = L.tag, cls = L.cls, ico = L.ico, pct = null;
-      if (i === 0) {
-        tit = 'Ver o que já está no Drive'; det = 'Só olha a pasta “Músicas do Site”. Não muda nada';
-        if (est === 'feito') { tit = 'Drive lido'; det = ndr != null ? plural(ndr, 'música encontrada', 'músicas encontradas') : ''; }
-        if (est === 'agora') { tit = 'Lendo o Drive'; det = a.arquivo || 'Pode demorar um pouco'; }
-      } else if (i === 1) {
-        tit = d.nSubir == null ? 'Enviar as músicas que faltam' : (d.nSubir === 0 ? 'Nada para enviar' : 'Enviar ' + plural(d.nSubir, 'música', 'músicas'));
-        det = 'Envia para o Drive só as que ainda não estão lá (uma cópia de cada)';
-        if (est === 'feito') { tit = 'Músicas enviadas'; det = 'Pasta “Músicas do Site” em dia'; }
-        if (est === 'agora') { tit = a.titulo || 'Subindo'; det = a.arquivo; pct = a.pct; }
-      } else if (i === 2) {
-        tit = d.nLixo == null ? 'Limpar as repetidas' : (d.nLixo === 0 ? 'Nenhuma repetida para limpar' : 'Limpar ' + plural(d.nLixo, 'repetida', 'repetidas'));
-        det = est === 'depois' ? 'O site mostra a lista e espera o seu OK' : 'Fica a maior; você confirma antes';
-        if (est === 'feito') { tit = 'Repetidas limpas'; det = 'Foram para a lixeira do Drive'; }
-        if (est === 'agora') {
-          if (a.confirmando) { tit = 'Esperando você confirmar'; det = 'Confira a janela na tela'; }
-          else { tit = a.titulo || 'Mandando para a lixeira'; det = a.arquivo; pct = a.pct; }
-        }
-      } else {
-        tit = 'Atualizar as playlists do celular'; det = 'Só serve se você usa o app Toxic Player';
-        if (est === 'feito') { tit = 'Playlists atualizadas'; det = 'No seu Drive'; }
-        if (est === 'agora') { tit = 'Enviando as playlists'; det = 'Para o seu Drive'; }
-      }
-      if (est === 'feito') { tag = 'Feito'; cls = 'ok'; ico = 'check'; }
-      else if (est === 'agora') { tag = 'Agora'; cls = ''; }
-      else if (est === 'depois') { tag = L.depois; }
-      R.t.textContent = tit;
-      R.d.textContent = det || '';
-      R.d.hidden = !det;
-      R.tag.textContent = tag;
-      R.tag.className = 'pilula' + (cls ? ' ' + cls : '');
-      if (R.ico !== ico) { esvaziar(R.circ); R.circ.appendChild(icone(ico)); R.ico = ico; }
-      R.barra.hidden = pct == null;
-      if (pct != null) R.i.style.width = pct + '%';
+    var dica = '';
+    if (rodando) dica = '';
+    else if (!d.google) dica = 'Entre para ver as suas playlists do Drive. O site nunca vê a sua senha.';
+    else {
+      var p = [];
+      if (d.nSubir) p.push(plural(d.nSubir, 'música nova do PC vai', 'músicas novas do PC vão') + ' para o Drive');
+      if (d.nLixo) p.push(plural(d.nLixo, 'repetida vai', 'repetidas vão') + ' para a lixeira (você confirma antes)');
+      dica = p.length ? 'Agora: ' + p.join('; ') + '.' : 'Lê o Drive e atualiza o arquivo de playlists do app.';
     }
-  };
+    $('painelDica').textContent = dica;
 
-  // ---------- Janela de ajuda: passo a passo e significado das palavras ----------
-  UI.ajuda = function () {
-    var c = el('div', null, 'ajuda');
-    function p(forte, texto) { var x = el('p'); x.appendChild(el('b', forte)); x.appendChild(document.createTextNode(' ' + texto)); c.appendChild(x); }
-    c.appendChild(el('h3', 'Em uma frase'));
-    p('O que o site faz:', 'pega as músicas do seu computador e guarda no seu Google Drive, sem repetir.');
-    c.appendChild(el('h3', 'Passo a passo'));
-    p('1. Escolha a pasta.', 'Clique no botão vermelho grande e escolha a pasta onde estão as músicas no seu computador. O site só LÊ a pasta: não muda nem apaga nada nela.');
-    p('2. Entre com o Google.', 'Para o site enxergar o seu Google Drive. Ele nunca vê a sua senha.');
-    p('3. Clique em "Atualizar tudo".', 'O site faz sozinho, em ordem: lê o Drive, sobe as músicas que faltam (uma cópia de cada), manda as repetidas para a lixeira do Drive (só depois de você confirmar) e atualiza o arquivo de playlists.');
-    c.appendChild(el('h3', 'Mais opções (opcional)'));
-    p('Você não precisa disto para o básico.', 'Fica fechado no fim da página. Abra só se quiser algo extra:');
-    p('Repetidas no PC:', 'músicas que aparecem mais de uma vez na sua pasta. Só mostra, não apaga.');
-    p('Mais tocadas:', 'as músicas mais tocadas agora (Top 200), com a marca do que você já tem. Daqui também dá para criar uma playlist no YouTube.');
-    p('Novidades:', 'o que entrou e o que saiu dessas listas.');
-    p('Drive (manual):', 'os mesmos passos do botão "Atualizar tudo", mas um de cada vez.');
-    p('Avançado:', 'só para quem usa o programa Toxic Engine no computador.');
-    c.appendChild(el('h3', 'Palavras que aparecem no site'));
-    p('Drive:', 'o seu espaço na internet no Google, onde ficam as músicas guardadas.');
-    p('Lixeira do Drive:', 'as repetidas não somem de vez: ficam na lixeira por 30 dias e dá para recuperar.');
-    p('JSON:', 'um arquivo de texto com a lista de músicas de uma playlist. É o que o app do celular lê.');
-    p('Cota do YouTube:', 'o YouTube deixa criar cerca de 64 itens por dia de graça. O que sobrar continua no dia seguinte.');
-    c.appendChild(el('h3', 'Dica'));
-    p('O que é clicável?', 'Tudo que tem borda ou fundo de botão, e as linhas com a palavra "Clique para ver". O resto é só texto.');
-    return janela({ titulo: 'Como usar o Gerenciador', corpo: c, botoes: [{ rotulo: 'Entendi', vermelho: true, valor: true }], esc: true });
+    var pc = $('pcTexto');
+    var bAntes = $('botaoAntes');
+    var bPasta = $('botaoPasta');
+    if (!d.podePasta) {
+      pc.textContent = 'Pasta do PC (opcional): para enviar músicas novas, abra no Google Chrome ou no Microsoft Edge, no computador.';
+      bAntes.hidden = true;
+      bPasta.hidden = true;
+      return;
+    }
+    bPasta.hidden = false;
+    bPasta.disabled = rodando;
+    bAntes.disabled = rodando;
+    if (d.pcNome) {
+      pc.textContent = 'Pasta do PC (opcional): ' + d.pcNome + ' · ' + plural(d.pcTotal || 0, 'música', 'músicas');
+      bAntes.hidden = true;
+      bPasta.textContent = 'Trocar pasta';
+    } else if (d.antesNome) {
+      pc.textContent = 'Pasta do PC (opcional): só serve para enviar músicas novas ao Drive.';
+      bAntes.hidden = false;
+      bAntes.textContent = 'Usar a pasta de antes: ' + d.antesNome;
+      bPasta.textContent = 'Escolher outra pasta';
+    } else {
+      pc.textContent = 'Pasta do PC (opcional): só serve para enviar músicas novas ao Drive.';
+      bAntes.hidden = true;
+      bPasta.textContent = 'Escolher pasta do PC';
+    }
   };
 
   // ---------- Quando o script carrega ----------
   document.querySelectorAll('[data-ico]').forEach(function (n) { n.appendChild(icone(n.getAttribute('data-ico'))); });
-  montarPlano();
   var bt = $('botaoTema');
   function pintarTema() {
     esvaziar(bt);
@@ -547,13 +454,9 @@
   bt.onclick = function () {
     tema = tema === 'escuro' ? 'claro' : 'escuro';
     document.documentElement.setAttribute('data-tema', tema);
-    try { localStorage.setItem('gm_tema2', tema); } catch (e) { /* sem problema */ }
+    try { localStorage.setItem('gm_tema3', tema); } catch (e) { /* sem problema */ }
     pintarTema();
   };
-  $('botaoHistorico').onclick = UI.historico;
-  $('botaoAjuda').onclick = UI.ajuda;
-  // Primeira visita neste navegador: mostra a ajuda uma vez.
-  try { if (!localStorage.getItem('gm_ajuda1')) { localStorage.setItem('gm_ajuda1', '1'); setTimeout(UI.ajuda, 400); } } catch (e) { /* sem problema */ }
 
   window.UI = UI;
 })();

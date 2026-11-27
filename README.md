@@ -4,33 +4,44 @@
 
 Abra o site no **Google Chrome** ou no **Microsoft Edge**, no computador.
 
-1. **Escolher a pasta.** Clique no botão vermelho grande e escolha a pasta das suas músicas. O site só lê, não muda nada nela. Da segunda vez em diante o botão vira **Usar a pasta de antes** e abre a mesma pasta; se o Chrome perguntar, clique em **Permitir**. Para ele não perguntar mais, escolha **Permitir em todas as visitas** quando essa opção aparecer.
-2. **Entrar com o Google.** Para o site enxergar o seu Drive. Ele nunca vê a sua senha.
-3. **Atualizar tudo.** Um clique e o site lê o Drive, sobe o que falta, manda as repetidas para a lixeira (só depois de você confirmar) e atualiza as playlists.
+1. **Entrar com o Google.** Clique no botão azul grande. O site lê o seu Drive sozinho e mostra as suas playlists (cada pasta dentro de "Músicas do Site" vira uma playlist). Ele nunca vê a sua senha.
+2. **Ver o que mudou.** Em cada playlist aparece o que é novo desde a última atualização (+8 novas) e a coluna **Deezer**.
+3. **Conferir com o Deezer.** Clique em **Conferir com o Deezer**. O site procura cada playlist pelo nome e avisa quais têm música faltando. Clique em **Ver lista** e depois em **Copiar lista** para baixar só essas músicas e colocar na pasta.
+4. **Atualizar tudo.** O botão azul grande lê o Drive, sobe músicas novas (se você escolheu a pasta do PC), manda as repetidas para a lixeira (só depois que você confirmar) e atualiza o arquivo de playlists do app Toxic Player.
 
-Dúvidas? Clique em **? Como usar** no canto de cima do site.
+**Pasta do PC (opcional).** Só serve para subir músicas novas ao Drive. Clique em **Escolher pasta do PC** (ou **Usar a pasta de antes**). Sem ela, tudo funciona a partir do Drive.
 
-### Minhas playlists (aparece sozinho depois de escolher a pasta)
+### O que significa cada cor
 
-Mostra cada pasta como uma playlist e o que mudou desde a última atualização.
+- **Azul:** o botão principal.
+- **Verde:** tudo certo ("em dia").
+- **Laranja:** atenção, falta algo ("faltam 5", "não achei", "escolha uma").
+- **Vermelho:** só erro.
+- **Cinza:** só informação ("não procurei", "ainda não conferi").
 
-- **Quantas músicas são novas** em cada pasta (+8 novas), quantas saíram e se a pasta é nova ou sumiu.
-- **O que vai mudar na próxima atualização:** a prévia fica na tela antes de você clicar em **Atualizar tudo agora**.
-- **Adicionadas recentemente:** uma playlist automática com o que chegou nos últimos 7, 14, 30 ou 60 dias (você escolhe).
-- **Novas no topo:** dentro de cada playlist, as músicas novas ficam no começo da lista.
-- **Renomear** a playlist no app sem mudar o nome da pasta, ou **Não virar playlist** para esconder uma pasta (dá para voltar atrás).
-- **Histórico** das últimas 30 atualizações.
-- Se você já atualizou antes de existir este painel, clique em **Já atualizei antes** para o site começar a contar o que é novo a partir de agora.
+Todo status aparece com palavra e cor. O botão de lua/sol no topo troca entre o tema claro e o escuro.
 
-O registro fica só neste navegador (guarda códigos curtos, nunca o nome nem o conteúdo das músicas). Se você limpar os dados do navegador, ele recomeça do zero.
+### A coluna Deezer
 
-### O que tem em cada aba
+- **em dia:** você tem todas as músicas da playlist do Deezer.
+- **faltam N:** faltam N músicas. A lista se atualiza sozinha depois que você coloca as músicas e atualiza o Drive, sem consultar o Deezer de novo.
+- **não achei:** o site não achou o nome no Deezer (comum quando você renomeou a pasta). Clique em **Colar link**, cole o endereço da playlist do Deezer e clique em **Usar este link**. Se for uma playlist de nicho, marque **Não procurar esta**.
+- **escolha uma:** achou mais de uma parecida. Clique em **Escolher** e toque na certa.
+- **não procurei:** você marcou "Não procurar esta".
+- **ainda não conferi:** ainda não foi consultada.
 
-- **Repetidas no PC:** mostra as músicas repetidas da sua pasta. Só mostra, não apaga.
-- **Top 200:** as músicas mais tocadas por gênero, com a marca do que você já tem. Daqui dá para criar uma playlist no YouTube.
-- **Novidades:** o que entrou e saiu das listas.
-- **Google Drive:** os passos 1 a 4 (ler, subir, limpar, playlists).
-- **Motor do PC (avançado):** só para quem usa o programa Toxic Engine no computador.
+O Deezer só é consultado quando você clica em **Conferir** (em pequenos grupos, com pausa). Os resultados e as suas escolhas ficam só neste navegador. Não precisa de chave nem senha.
+
+### Minhas playlists
+
+- **Adicionadas recentemente:** playlist automática (7, 14, 30 ou 60 dias; clique em **Opções**).
+- **Opções** de cada playlist: renomear no app, esconder a pasta, link e conferência do Deezer.
+- **Pastas de cantor** (dentro de "Artistas") ficam separadas e não são conferidas no Deezer.
+- Se você nunca atualizou por este site, clique em **Já atualizei antes** para ele começar a contar o que é novo a partir de agora.
+
+### Ferramentas extras
+
+O botão **Ferramentas extras** (no topo) abre uma página com o que se usa raramente: músicas repetidas no PC, Top 200 e playlist no YouTube, novidades das listas, passos manuais do Drive, ferramentas de JSON, motor do PC (Toxic Engine) e histórico.
 
 ## Como colocar no GitHub (sem bagunçar as pastas)
 
@@ -42,23 +53,27 @@ O registro fica só neste navegador (guarda códigos curtos, nunca o nome nem o 
 
 ## Para quem mexe no código
 
+**Segurança (CSP no `index.html`).** O Deezer bloqueia chamadas diretas do navegador (CORS), então o site usa o modo JSONP do Deezer (`output=jsonp`). Por isso `script-src` ganhou **só** `https://api.deezer.com`. Nada mais foi aberto (`connect-src`, `default-src` e `img-src` continuam iguais).
+
+**Drive como fonte.** As playlists vêm das pastas de "Músicas do Site". Como o site sobe só uma cópia de música repetida, ele também lembra, pelo `playlists-inteligentes.json` antigo, em quais playlists cada música estava. O formato do JSON (`toxic-playlists`, versão 2) não mudou.
+
 Programa simples que roda no navegador (Chrome ou Edge).
 
-- Lê a pasta de músicas do PC (só leitura) e acha as repetidas.
+- Lê o Drive (pasta "Músicas do Site") como fonte principal; a pasta do PC é opcional (só leitura).
 - Mostra as listas top 200 (por gênero) e marca o que você já tem.
 - Mostra o que entrou e saiu de cada lista.
 - Com o login do Google: sobe o que falta para o Drive, manda repetidas para a lixeira do Drive (só com a sua confirmação) e atualiza o arquivo de playlists.
 
-Nada é apagado de vez. Visual: preto, cinza e vermelho cereja, sem animações.
+Nada é apagado de vez. Visual claro (com tema escuro opcional), sem animações.
 
 As listas são atualizadas todo dia pelo GitHub (arquivo `.github/workflows/atualizar.yml`).
 Para mudar quais listas são buscadas, edite `scripts/atualizar.mjs`.
 
-## Playlist no YouTube (aba Top 200)
+## Playlist no YouTube (Ferramentas extras > Top 200)
 
 Cada lista do Top 200 pode virar uma playlist **privada** no seu YouTube, aos poucos:
 
-1. Abra a aba **Top 200**, escolha a lista e clique em **Entrar com YouTube**.
+1. Abra **Ferramentas extras > Top 200**, escolha a lista e clique em **Entrar com YouTube**.
 2. Clique em **Enviar as próximas N músicas**. O site busca cada música no YouTube e coloca na playlist.
 3. A cota grátis do YouTube é de 10.000 unidades por dia (cerca de 64 músicas). Quando acabar, volte no dia seguinte e clique de novo: ele continua de onde parou.
 4. Cada música aparece com um selo: **no YouTube**, **falta no YouTube** ou **sem resultado**. Se você apagar um vídeo direto no YouTube, ele volta a aparecer como "falta".
