@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' https://accounts.google.com/gsi/style; script-src 'self' https://accounts.google.com/gsi/client; connect-src https://www.googleapis.com https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; img-src data:;">
 <title>Gerenciador de Músicas</title>
-<link rel="stylesheet" href="style.css?v=20261118d">
+<link rel="stylesheet" href="style.css?v=20261126a">
 </head>
 <body>
 
@@ -63,6 +63,9 @@
   <!-- 3. NÚMEROS -->
   <div id="numeros" class="numeros" hidden></div>
 
+  <!-- 3b. MINHAS PLAYLISTS: o que mudou em cada pasta (montado pelo app.js) -->
+  <section id="playlists" class="playlists" aria-label="Minhas playlists" hidden></section>
+
   <!-- 4. EXTRAS (fechado no começo: não é preciso para o básico) -->
   <details id="extras" class="extras">
     <summary><span>Mais opções</span><small>Ver repetidas, músicas mais tocadas, playlists… (opcional)</small></summary>
@@ -92,6 +95,6 @@
 <script src="ui.js?v=20261118d"></script>
 <script src="data/charts.js?v=20261118d"></script>
 <script src="youtube.js?v=20261118d"></script>
-<script src="app.js?v=20261121a"></script>
+<script src="app.js?v=20261126a"></script>
 </body>
 </html>

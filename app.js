@@ -6,7 +6,7 @@
   var PASTA_RAIZ = 'Músicas do Site';
   var CH = window.CHARTS || { atualizado: null, listas: {}, historico: [] };
   var $ = function (id) { return document.getElementById(id); };
-  var estado = { arquivos: [], b: [], aba: 'repetidas', lista: null, soFalta: false, soFaltaYt: false, tinhaSalvo: false, n: 50, cache: {}, aviso: '', pastaNome: '', lim: { repetidas: 50, top: 50, novidades: 50, motor: 50 }, abertos: {}, antes: null, ocupDesenhado: false };
+  var estado = { arquivos: [], b: [], aba: 'repetidas', lista: null, soFalta: false, soFaltaYt: false, tinhaSalvo: false, n: 50, cache: {}, aviso: '', pastaNome: '', lim: { repetidas: 50, top: 50, novidades: 50, motor: 50, playlists: 30, prev: 15 }, abertos: {}, antes: null, ocupDesenhado: false };
   var D = { token: null, itens: null, ocupado: false };
   // Motor Toxic: o que o motor deixou na pasta "Toxic Engine" do Drive (só leitura).
   var M = { status: null, pendentes: null, ocupado: false, erro: '' };
@@ -79,7 +79,7 @@
           if (EXT.indexOf(ext) >= 0) {
             var f = await item.getFile();
             var s = item.name.slice(0, i);
-            lista.push({ c: cam + item.name, k: chaveNome(s, false), b: chaveNome(s, true), t: f.size, h: item });
+            lista.push({ c: cam + item.name, k: chaveNome(s, false), b: chaveNome(s, true), t: f.size, m: f.lastModified, h: item });
           } else {
             stats.ignorados[ext] = (stats.ignorados[ext] || 0) + 1;
           }
@@ -641,15 +641,148 @@
     return { nome: a.nome, origem: 'Cantor', regra: { tipo: 'artista', nome: a.nome }, faixas: a.faixas };
   }
 
-  function pastas() {
-    var mapa = {};
+  // ---------- Minhas playlists: o que mudou em cada pasta e o que vira playlist ----------
+  // O registro fica só neste navegador. Guarda códigos curtos das músicas, nunca nomes nem conteúdo.
+  var REG_CH = 'gm_playlists_v1';
+  var reg = { v: 1, base: null, vistas: {}, cfg: {}, hist: [], dias: 14, semRec: false };
+
+  function hsh(s) {
+    var a = 5381, b = 2166136261;
+    for (var i = 0; i < s.length; i++) {
+      var c = s.charCodeAt(i);
+      a = ((a << 5) + a + c) | 0;
+      b = Math.imul(b ^ c, 16777619) | 0;
+    }
+    return (a >>> 0).toString(36) + (b >>> 0).toString(36);
+  }
+  function hk(m) { return m.hk || (m.hk = hsh(oDe(m))); }
+
+  function regCarregar() {
+    try {
+      var x = JSON.parse(localStorage.getItem(REG_CH) || 'null');
+      if (x && x.v === 1) {
+        reg.base = x.base || null;
+        reg.vistas = x.vistas || {};
+        reg.cfg = x.cfg || {};
+        reg.hist = x.hist || [];
+        reg.dias = x.dias || 14;
+        reg.semRec = !!x.semRec;
+      }
+    } catch (e) { /* sem problema */ }
+  }
+  function regSalvar() {
+    try { localStorage.setItem(REG_CH, JSON.stringify(reg)); return true; } catch (e) {
+      aviso('Não consegui guardar o registro das playlists neste navegador (sem espaço). O site continua funcionando, mas pode esquecer o que mudou.');
+      return false;
+    }
+  }
+
+  // Dia em que o site viu a música pela primeira vez. Na primeira leitura usa a data do arquivo no PC.
+  function regVistas(lista) {
+    if (!lista.length) return;
+    var primeira = !Object.keys(reg.vistas).length;
+    var agora = Date.now();
+    lista.forEach(function (m) {
+      var k = hk(m);
+      if (!reg.vistas[k]) reg.vistas[k] = primeira ? (m.m || agora) : agora;
+    });
+    regSalvar();
+  }
+  function dataDe(m) { return reg.vistas[hk(m)] || m.m || 0; }
+
+  // Uma linha por pasta: quantas músicas, quantas são novas desde a última atualização, quantas já estão no Drive.
+  function infoPastas() {
+    var mapa = {}, ordem = [];
     estado.arquivos.forEach(function (m) {
       var p = pastaDoArquivo(m.c);
-      (mapa[p] = mapa[p] || []).push(faixaLocal(m));
+      if (!mapa[p]) { mapa[p] = { p: p, nome: p.slice(p.lastIndexOf('/') + 1) || p, ms: [], ch: {} }; ordem.push(p); }
+      mapa[p].ms.push(m);
+      mapa[p].ch[hk(m)] = 1;
     });
-    return Object.keys(mapa).map(function (p) {
-      var nome = p.slice(p.lastIndexOf('/') + 1) || p;
-      return { nome: nome, origem: 'Pasta', regra: { tipo: 'pasta', nome: nome }, faixas: mapa[p] };
+    var noSite = null;
+    if (D.itens) { noSite = {}; D.itens.forEach(function (d) { if (d.site) noSite[oDe(d)] = 1; }); }
+    var lista = ordem.map(function (p) {
+      var x = mapa[p];
+      var cfg = reg.cfg[p] || {};
+      var base = reg.base && reg.base.pastas[p];
+      var bs = {};
+      if (base) base.forEach(function (h) { bs[h] = 1; });
+      x.base = !!base;
+      x.bs = bs;
+      x.novas = base ? Object.keys(x.ch).filter(function (h) { return !bs[h]; }).length : 0;
+      x.saiu = base ? base.filter(function (h) { return !x.ch[h]; }).length : 0;
+      x.nova = !!reg.base && !base;
+      x.oculta = !!cfg.oculta;
+      x.mostrado = cfg.nome || x.nome;
+      x.noDrive = noSite ? x.ms.filter(function (m) { return noSite[oDe(m)]; }).length : null;
+      return x;
+    });
+    var sumiram = reg.base ? Object.keys(reg.base.pastas).filter(function (p) { return !mapa[p]; }) : [];
+    return { lista: lista, sumiram: sumiram };
+  }
+
+  function fotoPastas(info) {
+    var o = {};
+    info.lista.forEach(function (x) { o[x.p] = Object.keys(x.ch); });
+    return o;
+  }
+  // "Já atualizei antes": passa a contar o que é novo a partir de agora, sem registrar no histórico.
+  function marcarBase() {
+    reg.base = { d: Date.now(), pastas: fotoPastas(infoPastas()) };
+    regSalvar();
+  }
+  // Chamada quando o arquivo de playlists foi enviado: guarda o histórico e passa a contar a partir daqui.
+  function registrarAtualizacao() {
+    var info = infoPastas();
+    var itens = [];
+    info.lista.forEach(function (x) {
+      if (x.oculta) return;
+      if (x.nova) itens.push({ p: x.mostrado, mais: x.ms.length, menos: 0, nova: 1 });
+      else if (x.novas || x.saiu) itens.push({ p: x.mostrado, mais: x.novas, menos: x.saiu });
+    });
+    info.sumiram.forEach(function (p) { itens.push({ p: p.slice(p.lastIndexOf('/') + 1), mais: 0, menos: reg.base.pastas[p].length, sumiu: 1 }); });
+    var h = { d: Date.now(), itens: itens.slice(0, 60), primeira: reg.base ? 0 : 1 };
+    reg.hist.unshift(h);
+    reg.hist = reg.hist.slice(0, 30);
+    reg.base = { d: h.d, pastas: fotoPastas(info) };
+    regSalvar();
+    return h;
+  }
+  function textoMudanca(h) {
+    if (h.primeira) return ' Primeira atualização registrada: da próxima vez, o site mostra só o que mudou em cada playlist.';
+    var mais = 0, n = 0;
+    h.itens.forEach(function (i) { mais += i.mais; if (i.mais) n++; });
+    return mais ? ' Mudou: ' + mais + ' música(s) nova(s) em ' + n + ' playlist(s).' : ' Nenhuma música nova nas playlists desta vez.';
+  }
+
+  // Playlist automática com o que chegou nos últimos N dias (mais novas primeiro).
+  function playlistRecentes() {
+    if (reg.semRec) return null;
+    var lim = Date.now() - reg.dias * 86400000;
+    var vistos = {};
+    var arr = [];
+    estado.arquivos.forEach(function (m) {
+      var d = dataDe(m);
+      var h = hk(m);
+      if (d >= lim && !vistos[h]) { vistos[h] = 1; arr.push({ m: m, d: d }); }
+    });
+    if (!arr.length) return null;
+    arr.sort(function (a, b) { return b.d - a.d; });
+    var faixas = arr.slice(0, 500).map(function (x) { return faixaLocal(x.m); });
+    return { nome: 'Adicionadas recentemente', origem: 'Pasta', regra: { tipo: 'lista', itens: faixas.map(function (f) { return { t: f.t, a: f.a }; }) }, faixas: faixas };
+  }
+
+  // Uma playlist por pasta. Pastas escondidas ficam de fora; as músicas novas (desde a última atualização) vão para o topo.
+  function pastas() {
+    var info = infoPastas().lista;
+    var vezes = {};
+    info.forEach(function (x) { vezes[x.nome] = (vezes[x.nome] || 0) + 1; });
+    return info.filter(function (x) { return !x.oculta; }).map(function (x) {
+      var cfg = reg.cfg[x.p] || {};
+      var nome = cfg.nome || (vezes[x.nome] > 1 ? x.p.split('/').slice(-2).join(' / ') : x.nome);
+      var ms = x.ms.map(function (m, i) { return { m: m, i: i, nova: (x.base && !x.bs[hk(m)]) ? 1 : 0, d: dataDe(m) }; });
+      ms.sort(function (a, b) { return (b.nova - a.nova) || (a.nova ? b.d - a.d : 0) || (a.i - b.i); });
+      return { nome: nome, origem: 'Pasta', regra: { tipo: 'pasta', nome: x.nome }, faixas: ms.map(function (y) { return faixaLocal(y.m); }) };
     });
   }
 
@@ -657,7 +790,196 @@
     var todas = Object.keys(CH.listas).map(function (id) { return playlistDaLista(id, estado.n); });
     artistas().filter(function (a) { return a.faixas.length >= 5; }).forEach(function (a) { todas.push(plArtista(a)); });
     pastas().forEach(function (p) { todas.push(p); });
+    var rec = playlistRecentes();
+    if (rec) todas.unshift(rec);
     return todas;
+  }
+
+  function dataTxt(ts) {
+    var d = new Date(ts);
+    return d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  }
+  function ehPastaDeCantor(p) { return p.split('/').slice(0, -1).some(function (s) { return s.toLowerCase() === 'artistas'; }); }
+
+  function pilulasMudanca(x) {
+    var pil = [];
+    if (x.nova) pil.push(pilula('playlist nova', 'am'));
+    if (x.novas) pil.push(pilula('+' + x.novas + ' novas', 'am'));
+    if (x.saiu) pil.push(pilula('−' + x.saiu + ' saíram', 'verm'));
+    return pil;
+  }
+
+  function botaoPeq(txt, fazer) {
+    var b = el('button', txt, 'btn-s peq');
+    b.type = 'button';
+    b.onclick = fazer;
+    return b;
+  }
+
+  function linhaPlaylist(x) {
+    var pil = [pilula(x.ms.length + ' músicas', 'tam')];
+    if (x.noDrive != null) pil.push(pilula('no Drive: ' + x.noDrive + '/' + x.ms.length, x.noDrive === x.ms.length ? 'ok' : 'am'));
+    pilulasMudanca(x).forEach(function (p) { pil.push(p); });
+    var l = itemLista(x.mostrado, 'Pasta: ' + pastaCurta(x.p + '/x'), pil);
+    var ac = el('div', null, 'pl-acoes');
+    ac.appendChild(botaoPeq('Renomear', function () {
+      var novo = window.prompt('Nome da playlist no app (deixe vazio para usar o nome da pasta):', x.mostrado);
+      if (novo === null) return;
+      novo = novo.trim().slice(0, 80);
+      var cfg = reg.cfg[x.p] || {};
+      if (novo && novo !== x.nome) cfg.nome = novo; else delete cfg.nome;
+      if (cfg.nome || cfg.oculta) reg.cfg[x.p] = cfg; else delete reg.cfg[x.p];
+      regSalvar();
+      desenhar(true);
+    }));
+    ac.appendChild(botaoPeq('Não virar playlist', function () {
+      var cfg = reg.cfg[x.p] || {};
+      cfg.oculta = true;
+      reg.cfg[x.p] = cfg;
+      regSalvar();
+      desenhar(true);
+    }));
+    l.querySelector('.item-txt').appendChild(ac);
+    return l;
+  }
+
+  function desenharPlaylists() {
+    var c = $('playlists');
+    esvaziar(c);
+    if (!estado.arquivos.length) { c.hidden = true; return; }
+    c.hidden = false;
+    var info = infoPastas();
+    var ativas = info.lista.filter(function (x) { return !x.oculta; });
+    var ocultas = info.lista.filter(function (x) { return x.oculta; });
+    var totNovas = 0, totSaiu = 0, comMudanca = [];
+    ativas.forEach(function (x) {
+      totNovas += x.novas;
+      totSaiu += x.saiu;
+      if (x.nova || x.novas || x.saiu) comMudanca.push(x);
+    });
+
+    c.appendChild(el('h2', 'Minhas playlists', 'eyebrow secao-titulo'));
+    c.appendChild(el('p', 'Cada pasta da sua biblioteca vira uma playlist no app. Aqui você vê o que mudou desde a última atualização e escolhe o que vira playlist.', 'nota pl-intro'));
+
+    var st = !reg.base
+      ? 'Ainda não há uma atualização registrada neste navegador, por isso o site não sabe o que é novo.'
+      : 'Última atualização: ' + dataTxt(reg.base.d) + '. Desde então: ' + totNovas + ' música(s) nova(s)' + (totSaiu ? ' e ' + totSaiu + ' que saiu/saíram das pastas' : '') + '.';
+    c.appendChild(el('p', st, 'pl-status'));
+
+    var barra = el('div', null, 'pl-barra');
+    var bAtu = el('button', 'Atualizar tudo agora', 'btn-v peq');
+    bAtu.type = 'button';
+    bAtu.onclick = acaoPrincipal;
+    barra.appendChild(bAtu);
+    if (!reg.base) {
+      barra.appendChild(botaoPeq('Já atualizei antes: contar o que é novo a partir de agora', function () { marcarBase(); desenhar(true); }));
+    }
+    c.appendChild(barra);
+
+    var op = el('div', null, 'pl-opcoes');
+    var lab = el('label');
+    var cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = !reg.semRec;
+    cb.onchange = function () { reg.semRec = !cb.checked; regSalvar(); desenhar(true); };
+    lab.appendChild(cb);
+    lab.appendChild(document.createTextNode('Criar a playlist \"Adicionadas recentemente\" com o que chegou nos últimos'));
+    op.appendChild(lab);
+    var sel = document.createElement('select');
+    sel.setAttribute('aria-label', 'Quantos dias contam como recentes');
+    [7, 14, 30, 60].forEach(function (n) {
+      var o = document.createElement('option');
+      o.value = String(n);
+      o.textContent = n + ' dias';
+      if (n === reg.dias) o.selected = true;
+      sel.appendChild(o);
+    });
+    sel.onchange = function () { reg.dias = parseInt(sel.value, 10) || 14; regSalvar(); desenhar(true); };
+    op.appendChild(sel);
+    c.appendChild(op);
+
+    // Prévia
+    c.appendChild(el('h3', 'O que vai mudar na próxima atualização', 'pl-sub'));
+    var rec = playlistRecentes();
+    var linhas = [];
+    if (rec) linhas.push(itemLista('Adicionadas recentemente', 'Playlist automática: o que chegou nos últimos ' + reg.dias + ' dias', [pilula(rec.faixas.length + ' músicas', 'tam')]));
+    comMudanca.sort(function (a, b) { return (b.novas - a.novas) || a.mostrado.localeCompare(b.mostrado, 'pt-BR'); });
+    comMudanca.forEach(function (x) {
+      linhas.push(itemLista(x.mostrado, 'Pasta: ' + pastaCurta(x.p + '/x'), pilulasMudanca(x)));
+    });
+    info.sumiram.forEach(function (p) {
+      linhas.push(itemLista(p.slice(p.lastIndexOf('/') + 1), 'A pasta não está mais no PC', [pilula('sai do app', 'verm')]));
+    });
+    if (!linhas.length) {
+      c.appendChild(vazio(reg.base ? 'Nada mudou desde a última atualização.' : 'Quando você clicar em \"Atualizar tudo agora\", o site passa a lembrar o que já enviou. Se o app já está em dia, use o botão \"Já atualizei antes\".'));
+    } else {
+      var prev = el('div', null, 'lista');
+      linhas.slice(0, estado.lim.prev).forEach(function (l) { prev.appendChild(l); });
+      rodapeMais(prev, 'prev', linhas.length);
+      c.appendChild(prev);
+    }
+
+    // Sugestão: pastas de cantor repetem a playlist do cantor
+    var cant = ativas.filter(function (x) { return ehPastaDeCantor(x.p); });
+    if (cant.length) {
+      var sug = el('div', null, 'pl-sug');
+      sug.appendChild(el('p', 'Você tem ' + cant.length + ' pasta(s) dentro de \"Artistas\". Cantores com 5 músicas ou mais já ganham uma playlist própria, então essas pastas podem repetir a mesma coisa.', 'nota'));
+      sug.appendChild(botaoPeq('Não criar playlist das pastas de Artistas', function () {
+        cant.forEach(function (x) { var cfg = reg.cfg[x.p] || {}; cfg.oculta = true; reg.cfg[x.p] = cfg; });
+        regSalvar();
+        desenhar(true);
+      }));
+      c.appendChild(sug);
+    }
+
+    // Todas as playlists
+    c.appendChild(el('h3', 'Todas as playlists (' + ativas.length + ')', 'pl-sub'));
+    var todas = ativas.slice().sort(function (a, b) {
+      var ma = (a.nova || a.novas || a.saiu) ? 0 : 1;
+      var mb = (b.nova || b.novas || b.saiu) ? 0 : 1;
+      return (ma - mb) || a.mostrado.localeCompare(b.mostrado, 'pt-BR');
+    });
+    if (!todas.length) {
+      c.appendChild(vazio('Nenhuma pasta está virando playlist agora.'));
+    } else {
+      var caixa = el('div', null, 'lista');
+      todas.slice(0, estado.lim.playlists).forEach(function (x) { caixa.appendChild(linhaPlaylist(x)); });
+      rodapeMais(caixa, 'playlists', todas.length);
+      c.appendChild(caixa);
+    }
+
+    // Escondidas e histórico
+    var extra = el('div', null, 'lista pl-extra');
+    extra.appendChild(recolhivel('plocultas', 'Pastas que não viram playlist', ocultas.length, function (corpo) {
+      if (!ocultas.length) { corpo.appendChild(el('div', 'Nenhuma.', 'linha-simples mu')); return; }
+      ocultas.forEach(function (x) {
+        var l = el('div', null, 'linha-simples');
+        l.appendChild(document.createTextNode(pastaCurta(x.p + '/x') + ' (' + x.ms.length + ' músicas)  '));
+        l.appendChild(botaoPeq('Voltar a virar playlist', function () {
+          var cfg = reg.cfg[x.p] || {};
+          delete cfg.oculta;
+          if (cfg.nome) reg.cfg[x.p] = cfg; else delete reg.cfg[x.p];
+          regSalvar();
+          desenhar(true);
+        }));
+        corpo.appendChild(l);
+      });
+    }));
+    extra.appendChild(recolhivel('plhist', 'Histórico de atualizações', reg.hist.length, function (corpo) {
+      if (!reg.hist.length) { corpo.appendChild(el('div', 'Ainda não há atualizações registradas.', 'linha-simples mu')); return; }
+      reg.hist.forEach(function (h) {
+        var txt;
+        if (h.primeira) txt = 'primeira atualização registrada';
+        else if (!h.itens.length) txt = 'nada mudou';
+        else {
+          txt = h.itens.slice(0, 8).map(function (i) {
+            return i.p + ' (' + (i.nova ? 'nova, ' + i.mais + ' músicas' : (i.sumiu ? 'pasta removida' : '+' + i.mais + (i.menos ? ' −' + i.menos : ''))) + ')';
+          }).join('; ') + (h.itens.length > 8 ? '; e mais ' + (h.itens.length - 8) : '');
+        }
+        corpo.appendChild(el('div', dataTxt(h.d) + ' — ' + txt, 'linha-simples'));
+      });
+    }));
+    c.appendChild(extra);
   }
 
   // ---------- Google Drive: entrar com a conta e ler o Drive ----------
@@ -808,7 +1130,8 @@
       var corpo = '--' + lim + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' + JSON.stringify(meta) + '\r\n--' + lim + '\r\nContent-Type: application/json\r\n\r\n' + conteudo + '\r\n--' + lim + '--';
       var url = 'https://www.googleapis.com/upload/drive/v3/files' + (antigos.length ? '/' + antigos[0].id : '') + '?uploadType=multipart';
       await api(url, { method: antigos.length ? 'PATCH' : 'POST', headers: { 'Content-Type': 'multipart/related; boundary=' + lim }, body: corpo });
-      D.msg = 'Pronto! O arquivo ' + nomeArq + ' está no seu Drive, na pasta "Toxic Playlists".';
+      var mudou = estado.arquivos.length ? textoMudanca(registrarAtualizacao()) : '';
+      D.msg = 'Pronto! O arquivo ' + nomeArq + ' está no seu Drive, na pasta "Toxic Playlists".' + mudou;
     } catch (e) {
       D.msg = 'Deu erro ao enviar: ' + e.message;
     }
@@ -1512,6 +1835,7 @@
     else if (estado.aba === 'drive') abaDrive(c);
     else if (estado.aba === 'motor') abaMotor(c);
     else abaNovidades(c);
+    desenharPlaylists();
   }
 
   // Texto que explica o que foi lido e o que foi ignorado.
@@ -1535,6 +1859,7 @@
       var stats = { pastas: 0, ignorados: {}, pastasComProblema: [] };
       await varrer(pasta, pasta.name + '/', lista, stats);
       preparar(lista);
+      regVistas(lista);
       estado.arquivos = lista;
       estado.pastaNome = pasta.name;
       estado.cache = {};
@@ -1616,6 +1941,7 @@
 
   if (!window.showDirectoryPicker) UI.msg('Para ler a pasta, abra no Google Chrome ou no Microsoft Edge.');
   carregar();
+  regCarregar();
   desenhar(true);
   iniciar();
 })();

@@ -10,6 +10,20 @@ Abra o site no **Google Chrome** ou no **Microsoft Edge**, no computador.
 
 Dúvidas? Clique em **? Como usar** no canto de cima do site.
 
+### Minhas playlists (aparece sozinho depois de escolher a pasta)
+
+Mostra cada pasta como uma playlist e o que mudou desde a última atualização.
+
+- **Quantas músicas são novas** em cada pasta (+8 novas), quantas saíram e se a pasta é nova ou sumiu.
+- **O que vai mudar na próxima atualização:** a prévia fica na tela antes de você clicar em **Atualizar tudo agora**.
+- **Adicionadas recentemente:** uma playlist automática com o que chegou nos últimos 7, 14, 30 ou 60 dias (você escolhe).
+- **Novas no topo:** dentro de cada playlist, as músicas novas ficam no começo da lista.
+- **Renomear** a playlist no app sem mudar o nome da pasta, ou **Não virar playlist** para esconder uma pasta (dá para voltar atrás).
+- **Histórico** das últimas 30 atualizações.
+- Se você já atualizou antes de existir este painel, clique em **Já atualizei antes** para o site começar a contar o que é novo a partir de agora.
+
+O registro fica só neste navegador (guarda códigos curtos, nunca o nome nem o conteúdo das músicas). Se você limpar os dados do navegador, ele recomeça do zero.
+
 ### O que tem em cada aba
 
 - **Repetidas no PC:** mostra as músicas repetidas da sua pasta. Só mostra, não apaga.
