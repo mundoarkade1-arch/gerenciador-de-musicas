@@ -1883,7 +1883,14 @@
   async function escolherPasta() {
     var pasta;
     try {
-      pasta = await window.showDirectoryPicker({ mode: 'read' });
+      var opc = { mode: 'read', id: 'musicas-toxic' };
+      if (estado.antes && estado.antes.handle) opc.startIn = estado.antes.handle;
+      try {
+        pasta = await window.showDirectoryPicker(opc);
+      } catch (e0) {
+        if (e0 && e0.name === 'TypeError') pasta = await window.showDirectoryPicker({ mode: 'read' }); // Chrome mais antigo: sem as opções extras
+        else throw e0;
+      }
     } catch (e) {
       if (e && e.name === 'AbortError') { UI.msg('Escolha a pasta quando quiser. Nada foi mudado.'); return; }
       UI.msg('A escolha da pasta foi cancelada ou o navegador não deixou (' + (e && e.name ? e.name : 'erro') + '). Tente uma pasta que não seja Downloads, Documentos ou Área de Trabalho.');
@@ -1895,7 +1902,7 @@
 
   function acaoPrincipal() {
     if (D.ocupado || D.tudo || UI.andamento.ativo) return;
-    if (!estado.arquivos.length) { escolherPasta(); return; }
+    if (!estado.arquivos.length) { if (estado.antes) estado.antes.usar(); else escolherPasta(); return; }
     if (!D.token) { entrar(); return; }
     atualizarTudo();
   }
@@ -1907,16 +1914,25 @@
     if (!guardada) return;
     estado.antes = {
       nome: guardada.name,
+      handle: guardada,
       usar: async function () {
+        if (D.ocupado || D.tudo || UI.andamento.ativo) return;
+        var espera = null;
         try {
-          var perm = await guardada.requestPermission({ mode: 'read' });
+          UI.msg('Abrindo a pasta de antes. Se o Chrome perguntar, clique em \"Permitir\".');
+          var perm = await guardada.queryPermission({ mode: 'read' });
           if (perm !== 'granted') {
-            UI.msg('Você não deixou o acesso à pasta. Clique de novo e escolha "Permitir", ou use o botão "Escolher pasta das músicas".');
-            return;
+            espera = setTimeout(function () { UI.msg('Estou esperando o Chrome. Procure a janelinha no alto da página e clique em \"Permitir\". Se ela não aparecer, use o botão \"Escolher outra pasta\".'); }, 6000);
+            perm = await guardada.requestPermission({ mode: 'read' });
+            clearTimeout(espera);
+            espera = null;
           }
-          await lerPasta(guardada);
+          if (perm === 'granted') { await lerPasta(guardada); return; }
+          UI.msg('O Chrome não liberou a pasta de antes. Vou abrir a janela de escolher pasta, já dentro dela: clique em \"Selecionar pasta\".');
+          await escolherPasta();
         } catch (e) {
-          UI.msg('Não consegui abrir a pasta de antes (' + (e && e.name ? e.name : 'erro') + '). Use o botão "Escolher pasta das músicas".');
+          if (espera) clearTimeout(espera);
+          UI.msg('Não consegui abrir a pasta de antes (' + (e && e.name ? e.name : 'erro') + '). Clique em \"Escolher outra pasta\" e escolha a pasta das músicas.');
         }
       }
     };
@@ -1929,7 +1945,7 @@
   UI.acaoEntrar = entrar;
   UI.aoMudar = desenharTopo;
   $('botaoPrincipal').onclick = acaoPrincipal;
-  $('botaoAntes').onclick = function () { if (estado.antes) estado.antes.usar(); };
+  $('botaoAntes').onclick = function () { if (!D.ocupado && !D.tudo && !UI.andamento.ativo) escolherPasta(); };
   $('botaoGoogle').onclick = function () { if (!D.ocupado && !D.tudo && !UI.andamento.ativo) entrar(); };
   document.querySelectorAll('.abas button').forEach(function (b) {
     b.onclick = function () {

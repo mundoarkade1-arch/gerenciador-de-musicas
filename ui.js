@@ -443,6 +443,7 @@
       $('heroEyebrow').textContent = T.eb;
       $('heroTitulo').textContent = T.t;
       $('heroTexto').textContent = T.p;
+      if (passo === 1 && d.antes) { $('heroTitulo').textContent = 'Abra a sua pasta de músicas.'; $('heroTexto').textContent = 'O site lembra da pasta que você usou da última vez. Clique no botão e, se o Chrome perguntar, clique em Permitir.'; }
       if (passo === 1 && !d.podePasta) $('heroTexto').textContent = 'Este navegador não consegue ler a pasta. Abra este site no Google Chrome ou no Microsoft Edge, no computador.';
     }
     $('heroSelo').textContent = T.s;
@@ -452,14 +453,14 @@
       b.appendChild(el('span', 'Não feche esta página'));
       b.disabled = true;
     } else {
-      b.appendChild(el('span', T.b));
+      b.appendChild(el('span', (passo === 1 && d.antes) ? 'Usar a pasta de antes: ' + d.antes.nome : T.b));
       if (passo === 3) b.appendChild(icone('seta'));
       b.disabled = passo === 1 && !d.podePasta;
     }
     var antes = $('botaoAntes');
     antes.hidden = !(passo === 1 && !rodando && d.antes);
     $('botaoGoogle').hidden = true; // um botão só por vez: o site já mostra o próximo passo
-    if (!antes.hidden) antes.textContent = 'Usar a mesma pasta de antes: ' + d.antes.nome;
+    if (!antes.hidden) antes.textContent = 'Escolher outra pasta';
 
     // Lado direito: o plano
     $('plano').className = 'plano' + (!rodando && passo < 3 ? ' apagado' : '');
